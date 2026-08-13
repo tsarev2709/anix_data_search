@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+reports/
+amo-structure*.json
+coverage/
+*.log
+.DS_Store
