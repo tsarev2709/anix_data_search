@@ -1,0 +1,5 @@
+project_id = "anix-contact-search"
+
+[functions.contact-search-admin]
+verify_jwt = false
+
