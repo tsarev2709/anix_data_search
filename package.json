@@ -12,7 +12,7 @@
     "check": "npm run typecheck && npm test",
     "inspect:amo": "tsx src/inspect-amo.ts",
     "start": "tsx src/index.ts",
-    "test": "vitest run",
+    "test": "vitest run --dir tests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
