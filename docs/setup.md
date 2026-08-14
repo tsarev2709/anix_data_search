@@ -34,6 +34,16 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 | `TAVILY_API_KEY` | рекомендуется | ключ поиска |
 | `HUNTER_API_KEY` | рекомендуется | ключ Domain Search / Verifier |
 | `OPENAI_API_KEY` | нет | включает структурирование имён и ролей |
+| `SUPABASE_URL` | для панели | URL проекта, также используется runner-ом |
+| `SUPABASE_ANON_KEY` | для панели | публичный ключ браузерного клиента |
+| `SUPABASE_SERVICE_ROLE_KEY` | для панели | только серверный ключ записи результатов |
+| `SUPABASE_ACCESS_TOKEN` | для деплоя | токен Supabase CLI |
+| `SUPABASE_DB_PASSWORD` | для деплоя | пароль БД для применения миграций |
+| `CLOUDFLARE_API_TOKEN` | для деплоя | токен с правом Workers Scripts: Edit |
+| `CLOUDFLARE_ACCOUNT_ID` | для деплоя | ID аккаунта Cloudflare |
+| `ADMIN_EMAILS` | для панели | разрешённые рабочие email через запятую |
+| `DASHBOARD_ORIGINS` | для панели | production URL панели без завершающего `/` |
+| `DASHBOARD_GITHUB_TOKEN` | для панели | fine-grained token с Actions: Read and write только для этого репозитория |
 
 ## 3. GitHub Variables
 
@@ -59,17 +69,27 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 | `HUNTER_VERIFY_EMAILS` | `false` | включать после оценки расхода квоты |
 | `OPENAI_MODEL` | `gpt-5.6-luna` | модель извлечения |
 | `AUTO_APPLY` | `false` | главный предохранитель записи |
+| `SUPABASE_PROJECT_ID` | project ref | используется workflow деплоя |
 
 `TARGET_ROLES` можно задать строкой через `|`. Без переменной используются собственник, основатель, генеральный директор, маркетинг/бренд, HR/L&D, внутренние коммуникации, охрана труда и промышленная безопасность.
 
-## 4. Первый запуск
+## 4. Закрытая панель
+
+1. Создайте Supabase project и скопируйте URL, anon key, service role key, project ref и DB password в GitHub.
+2. После первого merge workflow **Deploy admin dashboard** применит миграцию, развернёт Edge Function и Cloudflare Worker.
+3. Workflow сам передаст `ADMIN_EMAILS`, origin и GitHub token в Edge Function; вручную копировать их в Supabase не нужно.
+4. В Supabase Auth добавьте production URL панели в Redirect URLs и включите вход по email magic link.
+
+В браузер попадают только URL Supabase и anon key. Service role, AmoCRM и GitHub token остаются в server-side secrets. RLS не даёт браузерному пользователю прямого доступа к таблицам; чтение и решения проходят через Edge Function с allowlist email.
+
+## 5. Первый запуск
 
 1. Actions → **Weekly contact search** → Run workflow.
-2. `mode = dry-run`, `max_companies = 3`.
+2. `operation = research`, `mode = dry-run`, `max_companies = 3`.
 3. Открыть job summary и артефакт `contact-search-*`.
 4. Проверить компании, контакты, источники, скоринг и запланированные действия.
-5. Повторить вручную с `mode = apply` на 3 компаниях.
+5. В панели одобрить тестовые контакты и нажать «Отправить одобренные в AmoCRM».
 6. Проверить карточки AmoCRM: отсутствие дублей, связи, примечания, задачи и переход этапа.
-7. Только после этого установить `AUTO_APPLY=true`.
+7. `AUTO_APPLY` оставлять `false`, пока нужен ручной контроль.
 
 Расписание в workflow: каждый понедельник в 06:00 UTC, то есть 09:00 по Москве.

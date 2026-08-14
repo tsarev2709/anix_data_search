@@ -22,6 +22,7 @@ const schema = z
     AMO_OUTPUT_STATUS_ID: optionalInteger,
     AMO_COMPANY_WEBSITE_FIELD_ID: optionalInteger,
     AMO_CONTACT_POSITION_FIELD_ID: optionalInteger,
+    CONTACT_SEARCH_OPERATION: z.enum(["research", "sync-approved"]).default("research"),
     CONTACT_SEARCH_MODE: z.enum(["dry-run", "apply"]).default("dry-run"),
     MAX_COMPANIES: z.coerce.number().int().min(1).max(250).default(10),
     MAX_CONTACTS_PER_COMPANY: z.coerce.number().int().min(1).max(20).default(5),
@@ -40,6 +41,8 @@ const schema = z
     HUNTER_VERIFY_EMAILS: booleanString,
     OPENAI_API_KEY: z.string().optional(),
     OPENAI_MODEL: z.string().default("gpt-5.6-luna"),
+    SUPABASE_URL: z.string().url().optional(),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
     HTTP_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
     HTTP_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
     USER_AGENT: z.string().default("AnixContactResearchBot/0.1 (+https://studio.anix-ai.pro)"),
@@ -52,6 +55,16 @@ const schema = z
       if (!value.AMO_OUTPUT_STATUS_ID) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["AMO_OUTPUT_STATUS_ID"], message: "required for new_lead" });
       }
+    }
+    if (Boolean(value.SUPABASE_URL) !== Boolean(value.SUPABASE_SERVICE_ROLE_KEY)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [value.SUPABASE_URL ? "SUPABASE_SERVICE_ROLE_KEY" : "SUPABASE_URL"],
+        message: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured together",
+      });
+    }
+    if (value.CONTACT_SEARCH_OPERATION === "sync-approved" && value.CONTACT_SEARCH_MODE !== "apply") {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["CONTACT_SEARCH_MODE"], message: "sync-approved requires apply mode" });
     }
   });
 
@@ -69,6 +82,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     TAVILY_API_KEY: nonEmpty(env.TAVILY_API_KEY),
     HUNTER_API_KEY: nonEmpty(env.HUNTER_API_KEY),
     OPENAI_API_KEY: nonEmpty(env.OPENAI_API_KEY),
+    SUPABASE_URL: nonEmpty(env.SUPABASE_URL)?.replace(/\/$/, ""),
+    SUPABASE_SERVICE_ROLE_KEY: nonEmpty(env.SUPABASE_SERVICE_ROLE_KEY),
   });
 
   return {
@@ -85,6 +100,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       contactPositionFieldId: parsed.AMO_CONTACT_POSITION_FIELD_ID,
     },
     run: {
+      operation: parsed.CONTACT_SEARCH_OPERATION,
       mode: parsed.CONTACT_SEARCH_MODE,
       maxCompanies: parsed.MAX_COMPANIES,
       maxContactsPerCompany: parsed.MAX_CONTACTS_PER_COMPANY,
@@ -102,6 +118,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       openaiApiKey: parsed.OPENAI_API_KEY,
       openaiModel: parsed.OPENAI_MODEL,
     },
+    storage:
+      parsed.SUPABASE_URL && parsed.SUPABASE_SERVICE_ROLE_KEY
+        ? { url: parsed.SUPABASE_URL, serviceRoleKey: parsed.SUPABASE_SERVICE_ROLE_KEY }
+        : null,
     http: {
       timeoutMs: parsed.HTTP_TIMEOUT_MS,
       retries: parsed.HTTP_RETRIES,

@@ -12,9 +12,23 @@ describe("configuration", () => {
   it("uses safe dry-run defaults and normalizes the host", () => {
     const config = loadConfig(required);
     expect(config.run.mode).toBe("dry-run");
+    expect(config.run.operation).toBe("research");
     expect(config.amo.writeMode).toBe("enrich");
     expect(config.amo.baseUrl).toBe("https://example.amocrm.ru");
     expect(config.run.includeGenericEmails).toBe(true);
+  });
+
+  it("requires apply mode and Supabase for approved-contact synchronization", () => {
+    expect(() => loadConfig({ ...required, CONTACT_SEARCH_OPERATION: "sync-approved" })).toThrow(/apply mode/);
+    expect(() => loadConfig({ ...required, SUPABASE_URL: "https://project.supabase.co" })).toThrow(/configured together/);
+    const config = loadConfig({
+      ...required,
+      CONTACT_SEARCH_OPERATION: "sync-approved",
+      CONTACT_SEARCH_MODE: "apply",
+      SUPABASE_URL: "https://project.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "secret",
+    });
+    expect(config.storage?.url).toBe("https://project.supabase.co");
   });
 
   it("requires an output stage in new_lead mode", () => {

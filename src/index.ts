@@ -8,13 +8,42 @@ import { LlmExtractor } from "./providers/llm.js";
 import { TavilySearch } from "./providers/search.js";
 import { WebsiteCrawler } from "./providers/website.js";
 import { writeReport } from "./report.js";
+import { SupabaseRepository } from "./supabase.js";
+import { syncCandidates } from "./sync.js";
 import type { CompanyResearchResult, RunReport } from "./types.js";
+
+async function syncApproved(
+  amo: AmoCRMClient,
+  config: ReturnType<typeof loadConfig>,
+  repository: SupabaseRepository,
+  runId: string,
+): Promise<void> {
+  const approved = await repository.loadApproved(config.run.maxCompanies * config.run.maxContactsPerCompany);
+  console.log(`[${runId}] approved contacts=${approved.length}`);
+  const groups = new Map<number, typeof approved>();
+  for (const item of approved) groups.set(item.company.sourceLeadId, [...(groups.get(item.company.sourceLeadId) ?? []), item]);
+  let failures = 0;
+  for (const items of groups.values()) {
+    const first = items[0];
+    if (!first) continue;
+    const actions = await syncCandidates(amo, config, first.company, items.map((item) => item.candidate), runId);
+    if (actions.some((action) => action.status === "failed")) failures += 1;
+    else await repository.markSynced(items.map((item) => item.id));
+  }
+  if (failures > 0) throw new Error(`Не удалось синхронизировать ${failures} групп контактов`);
+}
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const runId = process.env.GITHUB_RUN_ID || randomUUID();
   const startedAt = new Date().toISOString();
   const amo = new AmoCRMClient(config.amo, config.http);
+  const repository = config.storage ? new SupabaseRepository(config.storage) : null;
+  if (config.run.operation === "sync-approved") {
+    if (!repository) throw new Error("Для sync-approved нужны SUPABASE_URL и SUPABASE_SERVICE_ROLE_KEY");
+    await syncApproved(amo, config, repository, runId);
+    return;
+  }
   const dependencies: PipelineDependencies = {
     amo,
     crawler: new WebsiteCrawler(config.http, config.run.maxPagesPerSite),
@@ -64,6 +93,7 @@ async function main(): Promise<void> {
     },
   };
   await writeReport(report);
+  if (repository) await repository.saveReport(report);
   console.log(`[${runId}] finished: selected=${report.totals.selected} failures=${report.totals.failures}`);
   if (report.totals.failures > 0) process.exitCode = 1;
 }
