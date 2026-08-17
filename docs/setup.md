@@ -75,6 +75,9 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 
 ## 4. Закрытая панель
 
+Панель может использовать общий Supabase-проект с `anix_dashboard`: её таблицы имеют отдельный префикс `contact_search_`, а миграция идемпотентна.
+
+
 1. Создайте Supabase project и скопируйте URL, anon key, service role key, project ref и DB password в GitHub.
 2. После первого merge workflow **Deploy admin dashboard** применит миграцию, развернёт Edge Function и Cloudflare Worker.
 3. Workflow сам передаст `ADMIN_EMAILS`, origin и GitHub token в Edge Function; вручную копировать их в Supabase не нужно.
