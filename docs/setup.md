@@ -38,6 +38,7 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 | `SUPABASE_ANON_KEY` | для панели | публичный ключ браузерного клиента |
 | `SUPABASE_SERVICE_ROLE_KEY` | для панели | только серверный ключ записи результатов |
 | `SUPABASE_ACCESS_TOKEN` | для деплоя | токен Supabase CLI |
+| `SUPABASE_DB_PASSWORD` | для деплоя | пароль БД для применения миграций |
 | `CLOUDFLARE_API_TOKEN` | для деплоя | токен с правом Workers Scripts: Edit |
 | `CLOUDFLARE_ACCOUNT_ID` | для деплоя | ID аккаунта Cloudflare |
 | `ADMIN_EMAILS` | для панели | разрешённые рабочие email через запятую |
@@ -74,7 +75,10 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 
 ## 4. Закрытая панель
 
-1. Создайте Supabase project и скопируйте URL, publishable key, server-side secret key и project ref в GitHub.
+Панель может использовать общий Supabase-проект с `anix_dashboard`: её таблицы имеют отдельный префикс `contact_search_`, а миграция идемпотентна.
+
+
+1. Создайте Supabase project и скопируйте URL, anon key, service role key, project ref и DB password в GitHub.
 2. После первого merge workflow **Deploy admin dashboard** применит миграцию, развернёт Edge Function и Cloudflare Worker.
 3. Workflow сам передаст `ADMIN_EMAILS`, origin и GitHub token в Edge Function; вручную копировать их в Supabase не нужно.
 4. В Supabase Auth добавьте production URL панели в Redirect URLs и включите вход по email magic link.
