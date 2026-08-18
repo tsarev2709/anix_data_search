@@ -1,11 +1,21 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 type Json = Record<string, unknown>;
+type AuthUser = { id: string; email?: string | null };
+type AuthorizationResult = {
+  user: AuthUser | null;
+  reason?: "missing_token" | "invalid_session" | "missing_email" | "email_not_allowed";
+  email?: string;
+};
+
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const allowedOrigins = (Deno.env.get("DASHBOARD_ORIGINS") ?? "").split(",").map((item) => item.trim()).filter(Boolean);
-const adminEmails = new Set((Deno.env.get("ADMIN_EMAILS") ?? "").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean));
+const adminEmails = new Set([
+  "studio@anix-ai.pro",
+  ...(Deno.env.get("ADMIN_EMAILS") ?? "").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean),
+]);
 
 function cors(request: Request): HeadersInit {
   const origin = request.headers.get("origin") ?? "";
@@ -21,19 +31,42 @@ function response(request: Request, status: number, body: Json): Response {
   return Response.json(body, { status, headers: cors(request) });
 }
 
-async function authorize(request: Request) {
-  const authorization = request.headers.get("authorization") ?? "";
-  const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { authorization } } });
-  const { data, error } = await userClient.auth.getUser(authorization.replace(/^Bearer\s+/i, ""));
-  if (error || !data.user?.email || !adminEmails.has(data.user.email.toLowerCase())) return null;
-  return data.user;
+async function authorize(request: Request): Promise<AuthorizationResult> {
+  const token = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  if (!token) return { user: null, reason: "missing_token" };
+
+  const authResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: {
+      apikey: anonKey,
+      authorization: `Bearer ${token}`,
+    },
+  });
+  if (!authResponse.ok) {
+    console.warn("Dashboard authorization rejected by Supabase Auth", { status: authResponse.status });
+    return { user: null, reason: "invalid_session" };
+  }
+
+  const user = await authResponse.json() as AuthUser;
+  const email = user.email?.trim().toLowerCase();
+  if (!email) return { user: null, reason: "missing_email" };
+  if (!adminEmails.has(email)) return { user: null, reason: "email_not_allowed", email };
+  return { user, email };
 }
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: cors(request) });
   if (!supabaseUrl || !anonKey || !serviceRoleKey) return response(request, 503, { error: "Supabase function secrets are incomplete" });
-  const user = await authorize(request);
-  if (!user) return response(request, 403, { error: "Доступ к панели не разрешён" });
+  const authorization = await authorize(request);
+  if (!authorization.user) {
+    const wrongEmail = authorization.reason === "email_not_allowed" && authorization.email;
+    return response(request, 403, {
+      error: wrongEmail
+        ? `Аккаунт ${wrongEmail} не входит в список администраторов`
+        : "Сессия не прошла проверку Supabase Auth. Выйдите из панели и войдите снова.",
+      code: authorization.reason ?? "authorization_failed",
+      signed_in_as: authorization.email ?? null,
+    });
+  }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const pathname = new URL(request.url).pathname;
