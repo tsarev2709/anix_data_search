@@ -1,10 +1,26 @@
-export type EvidenceSource = "website" | "search" | "hunter" | "llm";
+export type EvidenceSource =
+  | "website"
+  | "sitemap"
+  | "rss"
+  | "pdf"
+  | "searxng"
+  | "google_news"
+  | "gdelt"
+  | "common_crawl"
+  | "github"
+  | "gemini"
+  | "search"
+  | "hunter"
+  | "llm";
 
 export interface Evidence {
   source: EvidenceSource;
   url: string;
   title: string;
   snippet: string;
+  query?: string;
+  publishedAt?: string | null;
+  discoveredAt?: string;
 }
 
 export type Deliverability = "deliverable" | "risky" | "unknown" | "undeliverable";
@@ -14,6 +30,28 @@ export interface EmailAddress {
   generic: boolean;
   deliverability: Deliverability;
   confidence?: number;
+  status?: "found" | "general" | "inferred";
+  evidenceUrl?: string;
+  patternSource?: string;
+  domainHasMx?: boolean | null;
+}
+
+export type SocialPlatform = "telegram" | "vk" | "youtube" | "threads" | "instagram" | "tenchat" | "linkedin" | "rutube" | "github" | "other";
+export type SocialProfileKind = "company" | "person" | "channel" | "group" | "bot" | "event" | "unknown";
+
+export interface SocialProfile {
+  platform: SocialPlatform;
+  kind: SocialProfileKind;
+  url: string;
+  username: string | null;
+  displayName: string | null;
+  personName: string | null;
+  companyName: string | null;
+  role: string | null;
+  source: EvidenceSource;
+  evidenceUrl: string;
+  confidence: number;
+  lastSeen: string;
 }
 
 export interface ContactCandidate {
@@ -22,6 +60,7 @@ export interface ContactCandidate {
   emails: EmailAddress[];
   phones: string[];
   socialUrls: string[];
+  socialProfiles?: SocialProfile[];
   evidence: Evidence[];
   score: number;
   scoreReasons: string[];
@@ -44,9 +83,40 @@ export interface CompanyResearchResult {
   discoveredWebsite: string | null;
   candidates: ContactCandidate[];
   selectedCandidates: ContactCandidate[];
+  research: ResearchTrace;
   warnings: string[];
   actions: SyncAction[];
   durationMs: number;
+}
+
+export type ProviderRunStatus = "used" | "disabled" | "skipped" | "failed";
+
+export interface ResearchTrace {
+  searchQueries: string[];
+  searchResults: SearchResult[];
+  crawledPages: Array<{
+    url: string;
+    title: string;
+    emails: string[];
+    phones: string[];
+    socialUrls: string[];
+  }>;
+  evidence: Evidence[];
+  socialProfiles?: SocialProfile[];
+  peopleFound?: number;
+  providerFailures?: Array<{ provider: string; message: string }>;
+  crawlDiagnostics?: {
+    robotsUrl: string | null;
+    sitemapUrls: string[];
+    sitemapEntries: number;
+    feedUrls: string[];
+    pdfUrls: string[];
+    jsFallbacks: number;
+    wordpress: boolean;
+  };
+  providers: {
+    [provider: string]: ProviderRunStatus;
+  };
 }
 
 export interface SyncAction {
@@ -76,6 +146,22 @@ export interface RunReport {
     selected: number;
     actionsCompleted: number;
     failures: number;
+    searchQueries: number;
+    pagesCrawled: number;
+    searchResults: number;
+    socialProfilesFound: number;
+    peopleFound: number;
+    positionsFound: number;
+    emailsFound: number;
+    personalEmailsFound: number;
+    inferredEmailsFound: number;
+    phonesFound: number;
+    telegramFound: number;
+    highConfidenceContacts: number;
+    mediumConfidenceContacts: number;
+    lowConfidenceContacts: number;
+    providerFailures: number;
+    socialByPlatform: Record<string, number>;
   };
 }
 
@@ -84,6 +170,9 @@ export interface SearchResult {
   url: string;
   content: string;
   score?: number;
+  provider?: EvidenceSource;
+  query?: string;
+  publishedAt?: string | null;
 }
 
 export interface CrawledPage {
@@ -93,4 +182,6 @@ export interface CrawledPage {
   emails: string[];
   phones: string[];
   socialUrls: string[];
+  source?: "website" | "rss" | "pdf" | "wordpress";
+  publishedAt?: string | null;
 }

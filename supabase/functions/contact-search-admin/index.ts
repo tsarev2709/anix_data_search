@@ -192,8 +192,13 @@ Deno.serve(async (request) => {
   const pathname = new URL(request.url).pathname;
 
   if (request.method === "GET" && pathname.endsWith("/dashboard")) {
-    const [runsResult, contactsResult, workflow] = await Promise.all([
+    const [runsResult, companiesResult, contactsResult, workflow] = await Promise.all([
       admin.from("contact_search_runs").select("*").order("started_at", { ascending: false }).limit(50),
+      admin
+        .from("contact_search_companies")
+        .select("id,run_id,source_lead_id,source_lead_name,source_company_id,company_name,source_website,website,company_context,research_trace,candidates,selected_candidates,actions,warnings,duration_ms,created_at")
+        .order("created_at", { ascending: false })
+        .limit(500),
       admin
         .from("contact_search_candidates")
         .select("id,company_name,source_lead_id,full_name,position,emails,phones,social_urls,score,score_reasons,evidence,decision,synced_at,created_at")
@@ -201,15 +206,16 @@ Deno.serve(async (request) => {
         .limit(200),
       workflowSnapshot(),
     ]);
-    if (runsResult.error || contactsResult.error) {
+    if (runsResult.error || companiesResult.error || contactsResult.error) {
       return response(request, 500, {
-        error: runsResult.error?.message ?? contactsResult.error?.message ?? "Query failed",
+        error: runsResult.error?.message ?? companiesResult.error?.message ?? contactsResult.error?.message ?? "Query failed",
         code: "dashboard_storage_query_failed",
         stage: "supabase_read",
       }, requestId);
     }
     return response(request, 200, {
       runs: runsResult.data,
+      companies: companiesResult.data,
       contacts: contactsResult.data,
       workflow,
       status: {
@@ -220,7 +226,7 @@ Deno.serve(async (request) => {
       },
       diagnostics: {
         generated_at: new Date().toISOString(),
-        storage: { runs: "ok", contacts: "ok" },
+        storage: { runs: "ok", companies: "ok", contacts: "ok" },
         workflow: (workflow as { available?: boolean }).available ? "ok" : "unavailable",
       },
     }, requestId);

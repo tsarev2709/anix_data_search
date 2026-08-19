@@ -5,6 +5,13 @@ import { loadConfig } from "./config.js";
 import { researchCompany, type PipelineDependencies } from "./pipeline.js";
 import { HunterProvider } from "./providers/hunter.js";
 import { LlmExtractor } from "./providers/llm.js";
+import { CommonCrawlProvider } from "./providers/common-crawl.js";
+import { GdeltProvider } from "./providers/gdelt.js";
+import { GeminiGroundedProvider } from "./providers/gemini.js";
+import { GitHubDiscoveryProvider } from "./providers/github.js";
+import { GoogleNewsProvider } from "./providers/google-news.js";
+import { MultiSearchProvider } from "./providers/multi-search.js";
+import { SearxngProvider } from "./providers/searxng.js";
 import { TavilySearch } from "./providers/search.js";
 import { WebsiteCrawler } from "./providers/website.js";
 import { writeReport } from "./report.js";
@@ -47,7 +54,15 @@ async function main(): Promise<void> {
   const dependencies: PipelineDependencies = {
     amo,
     crawler: new WebsiteCrawler(config.http, config.run.maxPagesPerSite),
-    ...(config.providers.tavilyApiKey ? { search: new TavilySearch(config.providers.tavilyApiKey, config.http) } : {}),
+    commonCrawl: new CommonCrawlProvider(config.http),
+    search: new MultiSearchProvider([
+      new SearxngProvider(config.http, config.providers.searxngInstances),
+      new GoogleNewsProvider(config.http),
+      new GdeltProvider(config.http),
+      new GitHubDiscoveryProvider(config.http, config.providers.githubToken),
+      ...(config.providers.geminiApiKey ? [new GeminiGroundedProvider(config.providers.geminiApiKey, config.providers.geminiModel, config.http)] : []),
+      ...(config.providers.tavilyApiKey ? [new TavilySearch(config.providers.tavilyApiKey, config.http)] : []),
+    ]),
     ...(config.providers.hunterApiKey
       ? { hunter: new HunterProvider(config.providers.hunterApiKey, config.providers.hunterVerifyEmails, config.http) }
       : {}),
@@ -62,13 +77,50 @@ async function main(): Promise<void> {
   for (const [index, company] of companies.entries()) {
     console.log(`[${runId}] ${index + 1}/${companies.length}: ${company.companyName}`);
     try {
-      results.push(await researchCompany(company, config, dependencies, runId));
+      const result = await researchCompany(company, config, dependencies, runId);
+      results.push(result);
+      console.log(JSON.stringify({
+        event: "company_research_completed",
+        runId,
+        company: company.companyName,
+        sourceLeadId: company.sourceLeadId,
+        queries: result.research.searchQueries.length,
+        searchResults: result.research.searchResults.length,
+        pages: result.research.crawledPages.length,
+        candidates: result.candidates.length,
+        selected: result.selectedCandidates.length,
+        providers: result.research.providers,
+        providerFailures: result.research.providerFailures?.map((failure) => failure.provider) ?? [],
+        warnings: result.warnings.length,
+        durationMs: result.durationMs,
+      }));
     } catch (error) {
+      console.error(JSON.stringify({ event: "company_research_failed", runId, company: company.companyName, sourceLeadId: company.sourceLeadId, error: error instanceof Error ? error.message : String(error) }));
       results.push({
         company,
         discoveredWebsite: company.website,
         candidates: [],
         selectedCandidates: [],
+        research: {
+          searchQueries: [],
+          searchResults: [],
+          crawledPages: [],
+          evidence: [],
+          peopleFound: 0,
+          providerFailures: [{ provider: "pipeline", message: error instanceof Error ? error.message : String(error) }],
+          providers: {
+            searxng: "skipped",
+            google_news: "skipped",
+            gdelt: "skipped",
+            github: "skipped",
+            website: "failed",
+            common_crawl: "skipped",
+            gemini: config.providers.geminiApiKey ? "skipped" : "disabled",
+            tavily: config.providers.tavilyApiKey ? "skipped" : "disabled",
+            hunter: config.providers.hunterApiKey ? "skipped" : "disabled",
+            openai: config.providers.openaiApiKey ? "skipped" : "disabled",
+          },
+        },
         warnings: [`Критическая ошибка компании: ${error instanceof Error ? error.message : String(error)}`],
         actions: [{ type: "skip", status: "failed", detail: "Обработка компании прервана" }],
         durationMs: 0,
@@ -77,6 +129,13 @@ async function main(): Promise<void> {
   }
 
   const finishedAt = new Date().toISOString();
+  const allCandidates = results.flatMap((result) => result.candidates);
+  const allSocials = results.flatMap((result) => result.research.socialProfiles ?? []);
+  const allEmails = allCandidates.flatMap((candidate) => candidate.emails);
+  const socialByPlatform = allSocials.reduce<Record<string, number>>((counts, profile) => {
+    counts[profile.platform] = (counts[profile.platform] ?? 0) + 1;
+    return counts;
+  }, {});
   const report: RunReport = {
     runId,
     startedAt,
@@ -90,6 +149,22 @@ async function main(): Promise<void> {
       selected: results.reduce((sum, result) => sum + result.selectedCandidates.length, 0),
       actionsCompleted: results.flatMap((result) => result.actions).filter((action) => action.status === "completed").length,
       failures: results.flatMap((result) => result.actions).filter((action) => action.status === "failed").length,
+      searchQueries: results.reduce((sum, result) => sum + result.research.searchQueries.length, 0),
+      pagesCrawled: results.reduce((sum, result) => sum + result.research.crawledPages.length, 0),
+      searchResults: results.reduce((sum, result) => sum + result.research.searchResults.length, 0),
+      socialProfilesFound: allSocials.length,
+      peopleFound: new Set(results.flatMap((result) => result.candidates.map((candidate) => candidate.fullName ? `${result.company.sourceLeadId}:${candidate.fullName.toLowerCase()}` : null)).filter(Boolean)).size,
+      positionsFound: new Set(results.flatMap((result) => result.candidates.map((candidate) => candidate.position ? `${result.company.sourceLeadId}:${candidate.fullName ?? ""}:${candidate.position.toLowerCase()}` : null)).filter(Boolean)).size,
+      emailsFound: new Set(allEmails.filter((email) => email.status !== "inferred").map((email) => email.value)).size,
+      personalEmailsFound: new Set(allEmails.filter((email) => !email.generic && email.status !== "inferred").map((email) => email.value)).size,
+      inferredEmailsFound: new Set(allEmails.filter((email) => email.status === "inferred").map((email) => email.value)).size,
+      phonesFound: new Set(allCandidates.flatMap((candidate) => candidate.phones)).size,
+      telegramFound: socialByPlatform.telegram ?? 0,
+      highConfidenceContacts: allCandidates.filter((candidate) => candidate.score >= 75).length,
+      mediumConfidenceContacts: allCandidates.filter((candidate) => candidate.score >= 45 && candidate.score < 75).length,
+      lowConfidenceContacts: allCandidates.filter((candidate) => candidate.score < 45).length,
+      providerFailures: results.reduce((sum, result) => sum + (result.research.providerFailures?.length ?? 0), 0),
+      socialByPlatform,
     },
   };
   await writeReport(report);

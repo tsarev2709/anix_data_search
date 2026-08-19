@@ -41,6 +41,10 @@ const schema = z
     HUNTER_VERIFY_EMAILS: booleanString,
     OPENAI_API_KEY: z.string().optional(),
     OPENAI_MODEL: z.string().default("gpt-5.6-luna"),
+    GEMINI_API_KEY: z.string().optional(),
+    GEMINI_MODEL: z.string().default("gemini-3.1-flash-lite"),
+    SEARXNG_INSTANCES: z.string().optional(),
+    GITHUB_OSINT_TOKEN: z.string().optional(),
     SUPABASE_URL: z.string().url().optional(),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
     HTTP_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
@@ -117,6 +121,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       hunterVerifyEmails: parsed.HUNTER_VERIFY_EMAILS,
       openaiApiKey: parsed.OPENAI_API_KEY,
       openaiModel: parsed.OPENAI_MODEL,
+      geminiApiKey: nonEmpty(parsed.GEMINI_API_KEY),
+      geminiModel: parsed.GEMINI_MODEL,
+      searxngInstances: nonEmpty(parsed.SEARXNG_INSTANCES)?.split(",").map((value) => value.trim()).filter(Boolean),
+      githubToken: nonEmpty(parsed.GITHUB_OSINT_TOKEN),
     },
     storage:
       parsed.SUPABASE_URL && parsed.SUPABASE_SERVICE_ROLE_KEY

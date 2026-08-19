@@ -31,8 +31,9 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 |---|---:|---|
 | `AMO_BASE_URL` | да | `https://studioanixaipro.amocrm.ru` |
 | `AMO_ACCESS_TOKEN` | да | токен интеграции |
-| `TAVILY_API_KEY` | рекомендуется | ключ поиска |
-| `HUNTER_API_KEY` | рекомендуется | ключ Domain Search / Verifier |
+| `GEMINI_API_KEY` | нет | бесплатный Google AI Studio key для Gemini Search grounding |
+| `TAVILY_API_KEY` | нет | дополнительный платный/лимитированный поиск |
+| `HUNTER_API_KEY` | нет | дополнительный Domain Search / Verifier |
 | `OPENAI_API_KEY` | нет | включает структурирование имён и ролей |
 | `SUPABASE_URL` | для панели | URL проекта, также используется runner-ом |
 | `SUPABASE_ANON_KEY` | для панели | публичный ключ браузерного клиента |
@@ -67,6 +68,8 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 | `CREATE_FOLLOW_UP_TASK` | `true` | задача ответственному |
 | `FOLLOW_UP_DAYS` | `2` | срок задачи |
 | `HUNTER_VERIFY_EMAILS` | `false` | включать после оценки расхода квоты |
+| `GEMINI_MODEL` | `gemini-3.1-flash-lite` | модель с Google Search grounding; при изменении сверить доступность в своём free tier |
+| `SEARXNG_INSTANCES` | пусто | необязательный список JSON-enabled instances через запятую; без него используется встроенная ротация |
 | `OPENAI_MODEL` | `gpt-5.6-luna` | модель извлечения |
 | `AUTO_APPLY` | `false` | главный предохранитель записи |
 | `SUPABASE_PROJECT_ID` | project ref | используется workflow деплоя |
@@ -88,11 +91,13 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 ## 5. Первый запуск
 
 1. Actions → **Weekly contact search** → Run workflow.
-2. `operation = research`, `mode = dry-run`, `max_companies = 3`.
+2. `operation = research`, `mode = dry-run`, `max_companies = 10`.
 3. Открыть job summary и артефакт `contact-search-*`.
 4. Проверить компании, контакты, источники, скоринг и запланированные действия.
 5. В панели одобрить тестовые контакты и нажать «Отправить одобренные в AmoCRM».
 6. Проверить карточки AmoCRM: отсутствие дублей, связи, примечания, задачи и переход этапа.
 7. `AUTO_APPLY` оставлять `false`, пока нужен ручной контроль.
+
+Для free-first запуска достаточно обязательных AmoCRM и Supabase secrets. `GEMINI_API_KEY`, Tavily, Hunter и OpenAI можно не добавлять: их статус будет `disabled`, а SearXNG, Google News RSS, GDELT, Common Crawl, GitHub, crawler, PDF и DNS продолжат работать. Публичные SearXNG instances нестабильны по своей природе; ошибки и реально отправленные запросы показываются в аудите каждой компании.
 
 Расписание в workflow: каждый понедельник в 06:00 UTC, то есть 09:00 по Москве.

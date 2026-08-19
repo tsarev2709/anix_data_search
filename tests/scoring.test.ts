@@ -83,4 +83,23 @@ describe("candidate consolidation and scoring", () => {
     );
     expect(selected).toHaveLength(0);
   });
+
+  it("merges transitive identity and evidence links", () => {
+    const merged = mergeCandidates([
+      candidate({ fullName: "Иван Петров", position: "CEO", socialUrls: ["https://t.me/ivan"], evidence: [{ source: "website", url: "https://example.com/team", title: "Team", snippet: "Иван Петров" }] }),
+      candidate({ socialUrls: ["https://t.me/ivan"], emails: [{ value: "ivan@example.com", generic: false, deliverability: "unknown", status: "found" }], evidence: [{ source: "searxng", url: "https://search.example/ivan", title: "Profile", snippet: "ivan@example.com" }] }),
+      candidate({ fullName: "Иван Петров", position: "CEO", phones: ["+79990000000"], evidence: [{ source: "rss", url: "https://example.com/feed/ivan", title: "Appointment", snippet: "Иван Петров" }] }),
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.evidence).toHaveLength(3);
+    expect(merged[0]?.emails[0]?.value).toBe("ivan@example.com");
+    expect(merged[0]?.phones).toEqual(["+79990000000"]);
+  });
+
+  it("never selects an inferred-only email as a direct channel", () => {
+    const { selected } = selectCandidates([
+      candidate({ fullName: "Иван Петров", position: "CEO", emails: [{ value: "ivan@example.com", generic: false, deliverability: "unknown", status: "inferred" }], evidence: [{ source: "website", url: "https://example.com/team", title: "Team", snippet: "Иван Петров" }] }),
+    ], ["ceo"], 1, 5, false);
+    expect(selected).toHaveLength(0);
+  });
 });

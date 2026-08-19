@@ -5,16 +5,22 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 type View = "overview" | "contacts" | "runs" | "settings";
 type Decision = "pending" | "approved" | "rejected";
-type Contact = {
+type Candidate = {
+  fullName?: string | null; full_name?: string | null; position: string | null;
+  emails: Array<{ value: string; generic: boolean; deliverability: string; confidence?: number; status?: "found" | "general" | "inferred"; evidenceUrl?: string; domainHasMx?: boolean | null }>;
+  phones: string[]; socialUrls?: string[]; social_urls?: string[]; score: number;
+  scoreReasons?: string[]; score_reasons?: string[];
+  evidence: Array<{ url: string; title: string; source: string; snippet?: string }>;
+};
+type Contact = Candidate & {
   id: number; company_name: string; source_lead_id: number; full_name: string | null;
-  position: string | null; emails: Array<{ value: string; generic: boolean; deliverability: string; confidence?: number }>;
-  phones: string[]; social_urls: string[]; score: number; score_reasons: string[];
-  evidence: Array<{ url: string; title: string; source: string }>;
+  social_urls: string[]; score_reasons: string[];
   decision: Decision; synced_at: string | null; created_at: string;
 };
 type Run = {
   id: string; started_at: string; finished_at: string | null; mode: string; status: string;
   companies_count: number; candidates_count: number; selected_count: number; failures_count: number;
+  metrics?: Record<string, unknown> & { searchQueries?: number; pagesCrawled?: number; searchResults?: number; peopleFound?: number; positionsFound?: number; emailsFound?: number; personalEmailsFound?: number; inferredEmailsFound?: number; phonesFound?: number; telegramFound?: number; socialProfilesFound?: number; providerFailures?: number; socialByPlatform?: Record<string, number> };
 };
 type WorkflowStep = { name: string; status: string; conclusion: string | null; number: number };
 type WorkflowRun = {
@@ -31,12 +37,28 @@ type DispatchResponse = {
   ok: boolean; request_id: string;
   dispatch: { status: string; operation: "research" | "sync-approved"; mode: string; max_companies: number; requested_at: string };
 };
+type CompanyRun = {
+  id: number; run_id: string; source_lead_id: number; source_lead_name: string | null; source_company_id: number | null;
+  company_name: string; source_website: string | null; website: string | null; duration_ms: number; warnings: string[];
+  candidates: Candidate[]; selected_candidates: Candidate[];
+  actions: Array<{ type: string; status: string; detail: string }>;
+  research_trace: {
+    searchQueries?: string[];
+    searchResults?: Array<{ title: string; url: string; content?: string; provider?: string; query?: string; publishedAt?: string | null }>;
+    crawledPages?: Array<{ title: string; url: string; emails: string[]; phones: string[]; socialUrls: string[] }>;
+    evidence?: Array<{ title: string; url: string; source: string; snippet?: string }>;
+    socialProfiles?: Array<{ platform: string; kind?: string; url: string; username: string | null; displayName: string | null; personName: string | null; role: string | null; confidence: number; evidenceUrl: string; lastSeen: string }>;
+    providerFailures?: Array<{ provider: string; message: string }>;
+    crawlDiagnostics?: { robotsUrl: string | null; sitemapUrls: string[]; sitemapEntries: number; feedUrls: string[]; pdfUrls: string[]; jsFallbacks: number; wordpress: boolean };
+    providers?: Record<string, string>;
+  };
+};
 type DashboardData = {
-  runs: Run[]; contacts: Contact[];
+  runs: Run[]; companies: CompanyRun[]; contacts: Contact[];
   status: { amo: boolean; github: boolean; supabase: boolean; auto_apply: boolean };
   workflow: WorkflowSnapshot;
   request_id: string;
-  diagnostics: { generated_at: string; storage: { runs: string; contacts: string }; workflow: string };
+  diagnostics: { generated_at: string; storage: { runs: string; companies?: string; contacts: string }; workflow: string };
 };
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -113,6 +135,7 @@ function App({ session }: { session: Session }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [filter, setFilter] = useState<Decision | "all">("pending");
+  const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const [dispatchInfo, setDispatchInfo] = useState<DispatchResponse | null>(null);
   const refresh = useCallback(async () => { setError(""); try { setData(await callAdmin<DashboardData>(session, "/dashboard")); } catch (requestError) { setError(requestError instanceof Error ? requestError.message : String(requestError)); } finally { setLoading(false); } }, [session]);
   useEffect(() => { const timer = window.setTimeout(() => void refresh(), 0); return () => window.clearTimeout(timer); }, [refresh]);
@@ -126,7 +149,7 @@ function App({ session }: { session: Session }) {
     return () => window.clearInterval(timer);
   }, [activeWorkflow, dispatchInfo, refresh, trackedWorkflowFinished]);
   const decide = async (id: number, decision: Decision) => { setBusy(`contact-${id}`); try { await callAdmin(session, `/candidates/${id}`, { method: "PATCH", body: JSON.stringify({ decision }) }); setData((current) => current ? { ...current, contacts: current.contacts.map((item) => item.id === id ? { ...item, decision } : item) } : current); } catch (requestError) { setError(requestError instanceof Error ? requestError.message : String(requestError)); } finally { setBusy(""); } };
-  const dispatch = async (operation: "research" | "sync-approved") => { setBusy(operation); setError(""); try { const accepted = await callAdmin<DispatchResponse>(session, "/dispatch", { method: "POST", body: JSON.stringify({ operation, max_companies: operation === "research" ? 3 : 10 }) }); setDispatchInfo(accepted); setView("runs"); window.setTimeout(() => void refresh(), 1200); } catch (requestError) { setError(requestError instanceof Error ? requestError.message : String(requestError)); } finally { setBusy(""); } };
+  const dispatch = async (operation: "research" | "sync-approved") => { setBusy(operation); setError(""); try { const accepted = await callAdmin<DispatchResponse>(session, "/dispatch", { method: "POST", body: JSON.stringify({ operation, max_companies: 10 }) }); setDispatchInfo(accepted); setView("runs"); window.setTimeout(() => void refresh(), 1200); } catch (requestError) { setError(requestError instanceof Error ? requestError.message : String(requestError)); } finally { setBusy(""); } };
   const filteredContacts = useMemo(() => (data?.contacts ?? []).filter((item) => filter === "all" || item.decision === filter), [data, filter]);
   const pending = data?.contacts.filter((item) => item.decision === "pending").length ?? 0;
   const approved = data?.contacts.filter((item) => item.decision === "approved" && !item.synced_at).length ?? 0;
@@ -140,9 +163,9 @@ function App({ session }: { session: Session }) {
       {loading ? <div className="loading-grid"><i></i><i></i><i></i></div> : <>
         {view === "overview" && <section className="view-stack"><WorkflowMonitor snapshot={data?.workflow} awaitingStart={awaitingWorkflow} requestId={dispatchInfo?.request_id || data?.request_id} /><div className="stats-grid"><StatCard label="Ждут решения" value={pending} foot="найденных контактов" tone="accent" /><StatCard label="Готовы к AmoCRM" value={approved} foot="одобрены, не отправлены" /><StatCard label="Компаний за запуск" value={latest?.companies_count ?? 0} foot={latest ? formatDate(latest.finished_at) : "нет запусков"} /><StatCard label="Ошибок" value={latest?.failures_count ?? 0} foot="в последнем запуске" tone={(latest?.failures_count ?? 0) > 0 ? "danger" : ""} /></div>
           <div className="overview-grid"><section className="panel queue-panel"><div className="panel-head"><div><p className="eyebrow">ПРИОРИТЕТ</p><h2>Контакты на проверку</h2></div><button className="text-button" onClick={() => setView("contacts")}>Открыть все →</button></div>{(data?.contacts ?? []).filter((item) => item.decision === "pending").slice(0, 4).map((contact) => <div className="contact-row" key={contact.id}><div className="avatar">{initials(contact.full_name, contact.company_name)}</div><div className="contact-main"><strong>{contact.full_name || contact.emails[0]?.value || "Общий контакт"}</strong><span>{contact.position || contact.company_name}</span></div><div className="score">{contact.score}</div><div className="row-actions"><button onClick={() => void decide(contact.id, "rejected")}>×</button><button className="approve" onClick={() => void decide(contact.id, "approved")}>✓</button></div></div>)}{pending === 0 && <Empty icon="⌁" title="Очередь пуста" text="Запустите поиск — новые контакты появятся здесь." />}</section>
-            <section className="panel run-panel"><div className="panel-head"><div><p className="eyebrow">АВТОМАТИЗАЦИЯ</p><h2>Еженедельный цикл</h2></div><span className="live-pill">ПН · 09:00</span></div><div className="run-flow"><Flow n="1" title="AmoCRM" text="Компании из очереди" done /><div className="flow-line"></div><Flow n="2" title="OSINT-поиск" text="Сайт, Tavily, Hunter" done /><div className="flow-line"></div><Flow n="3" title="Ваше решение" text="Одобрить или отклонить" /></div><button className="primary-button full" disabled={approved === 0 || Boolean(busy)} onClick={() => void dispatch("sync-approved")}>{busy === "sync-approved" ? "Отправляем…" : `Отправить одобренные в AmoCRM (${approved})`}<span>→</span></button></section></div></section>}
+            <section className="panel run-panel"><div className="panel-head"><div><p className="eyebrow">АВТОМАТИЗАЦИЯ</p><h2>Еженедельный цикл</h2></div><span className="live-pill">ПН · 09:00</span></div><div className="run-flow"><Flow n="1" title="AmoCRM" text="Компании из очереди" done /><div className="flow-line"></div><Flow n="2" title="Free-first OSINT" text="Web, news, RSS, PDF, social" done /><div className="flow-line"></div><Flow n="3" title="Ваше решение" text="Одобрить или отклонить" /></div><button className="primary-button full" disabled={approved === 0 || Boolean(busy)} onClick={() => void dispatch("sync-approved")}>{busy === "sync-approved" ? "Отправляем…" : `Отправить одобренные в AmoCRM (${approved})`}<span>→</span></button></section></div></section>}
         {view === "contacts" && <section className="view-stack"><div className="toolbar"><div className="segmented">{(["pending", "approved", "rejected", "all"] as const).map((item) => <button className={filter === item ? "active" : ""} onClick={() => setFilter(item)} key={item}>{item === "pending" ? "Новые" : item === "approved" ? "Одобрены" : item === "rejected" ? "Отклонены" : "Все"}</button>)}</div><button className="primary-button small" disabled={approved === 0 || Boolean(busy)} onClick={() => void dispatch("sync-approved")}>В AmoCRM · {approved}</button></div><div className="contact-grid">{filteredContacts.map((contact) => <ContactCard key={contact.id} contact={contact} busy={busy === `contact-${contact.id}`} decide={decide} />)}{filteredContacts.length === 0 && <div className="empty-state wide"><div>◉</div><strong>Здесь пока пусто</strong><span>Для этого фильтра контактов нет.</span></div>}</div></section>}
-        {view === "runs" && <section className="view-stack"><WorkflowMonitor snapshot={data?.workflow} awaitingStart={awaitingWorkflow} requestId={dispatchInfo?.request_id || data?.request_id} /><section className="panel runs-table"><div className="panel-head"><div><p className="eyebrow">ЖУРНАЛ</p><h2>История результатов</h2></div></div><div className="table-head"><span>Запуск</span><span>Режим</span><span>Компании</span><span>Найдено</span><span>Ошибки</span><span>Статус</span></div>{(data?.runs ?? []).map((run) => <div className="table-row" key={run.id}><span><strong>{formatDate(run.started_at)}</strong><small>{run.id.slice(0, 10)}</small></span><span>{run.mode}</span><span>{run.companies_count}</span><span>{run.selected_count}</span><span>{run.failures_count}</span><span><b className={`run-status ${run.status}`}>{run.status}</b></span></div>)}{(data?.runs ?? []).length === 0 && <Empty icon="↻" title="Готовых результатов ещё нет" text="Текущий технический статус показан выше." />}</section></section>}
+        {view === "runs" && <section className="view-stack"><WorkflowMonitor snapshot={data?.workflow} awaitingStart={awaitingWorkflow} requestId={dispatchInfo?.request_id || data?.request_id} /><section className="panel runs-table"><div className="panel-head"><div><p className="eyebrow">ЖУРНАЛ</p><h2>История результатов</h2></div><span className="run-help">Нажмите на запуск для подробностей</span></div><div className="table-head"><span>Запуск</span><span>Режим</span><span>Компании</span><span>Найдено</span><span>Ошибки</span><span>Статус</span></div>{(data?.runs ?? []).map((run) => <div className="run-record" key={run.id}><button className="table-row run-toggle" onClick={() => setExpandedRun((current) => current === run.id ? null : run.id)}><span><strong>{formatDate(run.started_at)}</strong><small>{run.id.slice(0, 10)}</small></span><span>{run.mode}</span><span>{run.companies_count}</span><span>{run.selected_count}</span><span>{run.failures_count}</span><span><b className={`run-status ${run.status}`}>{run.status}</b><i>{expandedRun === run.id ? "−" : "+"}</i></span></button>{expandedRun === run.id && <RunAudit run={run} companies={(data?.companies ?? []).filter((company) => company.run_id === run.id)} />}</div>)}{(data?.runs ?? []).length === 0 && <Empty icon="↻" title="Готовых результатов ещё нет" text="Текущий технический статус показан выше." />}</section></section>}
         {view === "settings" && <section className="settings-grid"><section className="panel"><div className="panel-head"><div><p className="eyebrow">ИНТЕГРАЦИИ</p><h2>Состояние системы</h2></div></div><div className="integration-list">{[["AmoCRM", data?.status.amo, "Сделки, контакты и задачи"], ["GitHub Actions", data?.status.github, "Поиск и деплой"], ["Supabase", data?.status.supabase, "Доступ и история"]].map(([name, active, detail]) => <div key={String(name)}><span className={active ? "integration-icon active" : "integration-icon"}>{String(name)[0]}</span><span><strong>{String(name)}</strong><small>{String(detail)}</small></span><b className={active ? "connected" : "disconnected"}>{active ? "Подключено" : "Не настроено"}</b></div>)}</div></section><section className="panel settings-copy"><p className="eyebrow">РЕЖИМ</p><h2>{data?.status.auto_apply ? "Автоприменение включено" : "Ручное одобрение"}</h2><p>Контакт попадает в AmoCRM только после проверки в этой панели. Это защищает базу от дублей и нерелевантных адресов.</p><div className="safe-badge">✓ Безопасный режим</div><button className="ghost-button full" onClick={() => void supabase?.auth.signOut()}>Выйти из панели</button></section></section>}
       </>}
   </main></div>;
@@ -152,6 +175,7 @@ function friendlyStep(name: string) {
   const labels: Record<string, string> = {
     "Set up job": "Подготовка сервера",
     "Run npm ci": "Установка зависимостей",
+    "Install Chromium for selective JavaScript fallback": "Подготовка браузера для SPA-сайтов",
     "Run npm run check": "Проверка кода и настроек",
     "Research and sync": "Чтение AmoCRM и поиск контактов",
     "Add report to job summary": "Формирование отчёта",
@@ -178,6 +202,55 @@ function WorkflowMonitor({ snapshot, awaitingStart, requestId }: { snapshot?: Wo
     {steps.length > 0 && <div className="workflow-steps">{steps.map((step) => <div className={`${step.status} ${step.conclusion ?? ""}`} key={`${step.number}-${step.name}`}><i>{step.conclusion === "success" ? "✓" : step.conclusion === "failure" ? "!" : step.status === "in_progress" ? "↻" : "·"}</i><span>{friendlyStep(step.name)}</span><small>{step.conclusion === "failure" ? "ошибка" : step.status === "in_progress" ? "выполняется" : step.conclusion === "success" ? "готово" : "ожидает"}</small></div>)}</div>}
     <div className="workflow-meta"><span>Диагностика: {requestId || "—"}</span>{run?.created_at && <span>Старт: {formatDate(run.created_at)}</span>}{run?.url && <a href={run.url} target="_blank" rel="noreferrer">Открыть полный технический лог →</a>}</div>
   </section>;
+}
+
+function candidateName(candidate: Candidate) {
+  return candidate.fullName ?? candidate.full_name ?? candidate.emails[0]?.value ?? candidate.phones[0] ?? "Контакт без имени";
+}
+
+function candidateKey(candidate: Candidate) {
+  return candidate.emails[0]?.value ?? candidate.phones[0] ?? `${candidate.fullName ?? candidate.full_name ?? ""}|${candidate.position ?? ""}`;
+}
+
+function RunAudit({ run, companies }: { run: Run; companies: CompanyRun[] }) {
+  if (companies.length === 0) return <div className="audit-empty"><strong>Детали этого запуска ещё не сохранялись</strong><span>Запустите новый поиск — в нём будет полный аудит по 10 компаниям.</span></div>;
+  const metrics = run.metrics ?? {};
+  return <div className="run-audit"><div className="audit-summary"><span><b>{companies.length}</b> компаний</span><span><b>{run.candidates_count}</b> кандидатов</span><span><b>{run.selected_count}</b> прошли фильтр</span><span><b>{metrics.searchQueries ?? 0}</b> запросов</span><span><b>{metrics.pagesCrawled ?? 0}</b> страниц</span><span><b>{metrics.peopleFound ?? 0}</b> ФИО</span><span><b>{metrics.positionsFound ?? 0}</b> должностей</span><span><b>{metrics.personalEmailsFound ?? 0}</b> личных email</span><span><b>{metrics.telegramFound ?? 0}</b> Telegram</span><span><b>{metrics.phonesFound ?? 0}</b> телефонов</span><span><b>{metrics.socialProfilesFound ?? 0}</b> соцпрофилей</span></div>{companies.map((company, index) => <CompanyAudit key={company.id} company={company} index={index} />)}</div>;
+}
+
+function CompanyAudit({ company, index }: { company: CompanyRun; index: number }) {
+  const trace = company.research_trace ?? {};
+  const queries = trace.searchQueries ?? [];
+  const results = trace.searchResults ?? [];
+  const pages = trace.crawledPages ?? [];
+  const candidates = company.candidates ?? [];
+  const selected = company.selected_candidates ?? [];
+  const selectedKeys = new Set(selected.map(candidateKey));
+  const socials = trace.socialProfiles ?? [];
+  const crawl = trace.crawlDiagnostics;
+  const peopleCount = candidates.filter((candidate) => candidate.fullName || candidate.full_name).length;
+  const positionCount = candidates.filter((candidate) => candidate.position).length;
+  const directChannelCount = candidates.filter((candidate) => candidate.emails.some((email) => email.status !== "inferred") || candidate.phones.length > 0 || (candidate.socialUrls ?? candidate.social_urls ?? []).length > 0).length;
+  const amoLeadUrl = `https://studioanixaipro.amocrm.ru/leads/detail/${company.source_lead_id}`;
+  const amoCompanyUrl = company.source_company_id ? `https://studioanixaipro.amocrm.ru/companies/detail/${company.source_company_id}` : null;
+  return <details className="company-audit" open={index === 0}><summary><span className="company-number">{index + 1}</span><span><strong>{company.company_name}</strong><small>Сделка #{company.source_lead_id} · {company.source_lead_name || "без названия"}</small></span><span className="company-audit-counts"><b>{selected.length}</b> отобрано<small>{Math.round(company.duration_ms / 100) / 10} сек.</small></span></summary><div className="company-audit-body">
+    <div className="audit-links"><a href={amoLeadUrl} target="_blank" rel="noreferrer">Открыть сделку AmoCRM ↗</a>{amoCompanyUrl && <a href={amoCompanyUrl} target="_blank" rel="noreferrer">Открыть компанию ↗</a>}{company.website && <a href={company.website} target="_blank" rel="noreferrer">Официальный сайт ↗</a>}</div>
+    <div className="provider-strip">{Object.entries(trace.providers ?? {}).map(([name, status]) => <span className={`provider ${status}`} key={name}><b>{name}</b>{status === "used" ? "отработал" : status === "disabled" ? "не подключён" : status === "failed" ? "ошибка" : "пропущен"}</span>)}</div>
+    {crawl && <div className="crawl-stats"><span>Sitemap: <b>{crawl.sitemapEntries}</b> URL</span><span>RSS: <b>{crawl.feedUrls.length}</b></span><span>PDF: <b>{crawl.pdfUrls.length}</b></span><span>JS fallback: <b>{crawl.jsFallbacks}</b></span><span>WordPress: <b>{crawl.wordpress ? "да" : "нет"}</b></span></div>}
+    <div className="audit-columns"><section><p className="audit-title">Поисковые запросы · {queries.length}</p>{queries.length > 0 ? <ol className="query-list">{queries.map((query) => <li key={query}>{query}</li>)}</ol> : <p className="audit-muted">Внешний поиск не выполнялся.</p>}</section><section><p className="audit-title">Обход сайта · {pages.length} страниц</p>{pages.length > 0 ? <div className="source-list">{pages.map((page) => <a href={page.url} target="_blank" rel="noreferrer" key={page.url}><strong>{page.title}</strong><small>{page.emails.length} email · {page.phones.length} телефонов · {page.socialUrls.length} соцсетей</small></a>)}</div> : <p className="audit-muted">Страницы не обойдены: в CRM нет сайта или он недоступен.</p>}</section></div>
+    {results.length > 0 && <section className="audit-section"><p className="audit-title">Результаты веб-поиска · {results.length}</p><div className="search-result-grid">{results.map((result) => <a href={result.url} target="_blank" rel="noreferrer" key={result.url}><b>{result.provider || "web"}{result.publishedAt ? ` · ${formatDate(result.publishedAt)}` : ""}</b><strong>{result.title}</strong><span>{result.content || result.url}</span></a>)}</div></section>}
+    {socials.length > 0 && <section className="audit-section"><p className="audit-title">Социальные профили · {socials.length}</p><div className="social-audit-grid">{socials.map((profile) => <a href={profile.url} target="_blank" rel="noreferrer" key={`${profile.platform}-${profile.url}`}><b>{profile.platform} · {profile.kind || "unknown"}</b><strong>{profile.personName || profile.displayName || profile.username || "Профиль"}</strong><span>{profile.role || `confidence ${profile.confidence}%`}</span></a>)}</div></section>}
+    {selected.length === 0 && <section className="audit-nothing"><strong>Почему нет готового контакта</strong><span>{company.website ? "Официальный сайт определён." : "Официальный сайт не определён."} Просмотрено {pages.length} страниц, sitemap содержит {crawl?.sitemapEntries ?? 0} URL, поисковые источники дали {results.length} результатов. Найдено {peopleCount} упоминаний ФИО и {positionCount} должностей; кандидатов с прямым каналом — {directChannelCount}. Ни один кандидат одновременно не подтвердил нужную роль, связь с компанией и пригодный прямой канал выше порога.</span></section>}
+    <section className="audit-section"><p className="audit-title">Кандидаты · {candidates.length}</p>{candidates.length > 0 ? <div className="audit-candidates">{candidates.map((candidate, candidateIndex) => <CandidateAudit key={`${candidateName(candidate)}-${candidateIndex}`} candidate={candidate} selected={selectedKeys.has(candidateKey(candidate))} />)}</div> : <p className="audit-muted">Не найдено ни одного email, телефона или профиля. Ниже указаны причины.</p>}</section>
+    {company.warnings?.length > 0 && <section className="warning-list"><p className="audit-title">Ограничения и проблемы</p>{company.warnings.map((warning) => <div key={warning}>! {warning}</div>)}</section>}
+    {(trace.providerFailures ?? []).length > 0 && <section className="warning-list"><p className="audit-title">Сбои providers</p>{trace.providerFailures!.map((failure) => <div key={`${failure.provider}-${failure.message}`}>{failure.provider}: {failure.message}</div>)}</section>}
+  </div></details>;
+}
+
+function CandidateAudit({ candidate, selected }: { candidate: Candidate; selected: boolean }) {
+  const socials = candidate.socialUrls ?? candidate.social_urls ?? [];
+  const reasons = candidate.scoreReasons ?? candidate.score_reasons ?? [];
+  return <article><div><strong>{candidateName(candidate)}</strong><span>{candidate.position || "Должность не найдена"}</span><small>{selected ? "ВЫБРАН: есть подтверждённый прямой канал" : "ОТКЛОНЁН: ниже порога или нет подтверждённого прямого канала"}</small></div><b className={selected ? "candidate-pass" : "candidate-low"}>{candidate.score}/100</b><div className="candidate-channels">{candidate.emails.map((email) => <a href={email.status === "inferred" ? undefined : `mailto:${email.value}`} key={email.value}>{email.value}<small>{email.status === "inferred" ? "INFERRED — не будет записан в CRM" : email.status === "general" || email.generic ? "GENERAL · общий" : "FOUND · персональный"} · MX {email.domainHasMx === true ? "есть" : email.domainHasMx === false ? "нет" : "неизвестен"}</small></a>)}{candidate.phones.map((phone) => <a href={`tel:${phone}`} key={phone}>{phone}</a>)}{socials.map((url) => <a href={url} target="_blank" rel="noreferrer" key={url}>Профиль ↗</a>)}</div><div className="candidate-reasons">{reasons.map((reason) => <span key={reason}>{reason}</span>)}</div><div className="candidate-evidence">{candidate.evidence.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={`${source.source}-${source.url}`}>{source.source}: {source.title}</a>)}</div></article>;
 }
 
 function Flow({ n, title, text, done = false }: { n: string; title: string; text: string; done?: boolean }) { return <div className={`flow-step ${done ? "done" : ""}`}><i>{n}</i><span><b>{title}</b><small>{text}</small></span></div>; }

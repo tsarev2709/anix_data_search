@@ -51,6 +51,7 @@ export class SupabaseRepository {
         candidates_count: report.totals.candidates,
         selected_count: report.totals.selected,
         failures_count: report.totals.failures,
+        metrics: report.totals,
       }),
     });
 
@@ -64,8 +65,16 @@ export class SupabaseRepository {
         report.companies.map((result) => ({
           run_id: report.runId,
           source_lead_id: result.company.sourceLeadId,
+          source_lead_name: result.company.sourceLeadName,
+          source_company_id: result.company.companyId,
           company_name: result.company.companyName,
+          source_website: result.company.website,
           website: result.discoveredWebsite,
+          company_context: result.company,
+          research_trace: result.research,
+          candidates: result.candidates,
+          selected_candidates: result.selectedCandidates,
+          actions: result.actions,
           warnings: result.warnings,
           duration_ms: result.durationMs,
         })),

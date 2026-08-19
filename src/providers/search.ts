@@ -2,6 +2,7 @@ import type { HttpOptions } from "../http.js";
 import { requestJson } from "../http.js";
 import type { Evidence, SearchResult } from "../types.js";
 import { normalizeUrl, truncate, uniqueBy } from "../utils.js";
+import type { ProviderSearchResult, SearchProvider } from "./search-provider.js";
 
 interface TavilyResponse {
   results?: Array<{ title?: string; url?: string; content?: string; score?: number }>;
@@ -24,20 +25,18 @@ const NON_OFFICIAL_HOSTS = [
   "zachestnyibiznes.ru",
 ];
 
-export class TavilySearch {
+export class TavilySearch implements SearchProvider {
+  readonly name = "tavily";
+  readonly source = "search" as const;
   constructor(
     private readonly apiKey: string,
     private readonly http: HttpOptions,
   ) {}
 
-  async searchCompany(companyName: string, targetRoles: string[]): Promise<SearchResult[]> {
-    const roleQuery = targetRoles.slice(0, 8).join(" OR ");
-    const queries = [
-      `\"${companyName}\" официальный сайт контакты руководство`,
-      `\"${companyName}\" (${roleQuery}) email Telegram`,
-    ];
+  async searchCompany(companyName: string, targetRoles: string[]): Promise<ProviderSearchResult> {
+    const queries = companySearchQueries(companyName, targetRoles);
     const batches = await Promise.all(queries.map((query) => this.search(query)));
-    return uniqueBy(batches.flat(), (result) => result.url);
+    return { provider: this.name, source: this.source, status: "used", queries, results: uniqueBy(batches.flat(), (result) => result.url), warnings: [] };
   }
 
   private async search(query: string): Promise<SearchResult[]> {
@@ -55,14 +54,30 @@ export class TavilySearch {
         title: result.title?.trim() || result.url || "Результат поиска",
         url: normalizeUrl(result.url ?? "") ?? "",
         content: truncate(result.content ?? "", 3_000),
-        ...(typeof result.score === "number" ? { score: result.score } : {}),
+        ...(typeof result.score === "number" ? { score: result.score } : {}), provider: this.source,
       }))
       .filter((result) => Boolean(result.url));
   }
 }
 
+export function companySearchQueries(companyName: string, targetRoles: string[]): string[] {
+  const roleQuery = targetRoles.slice(0, 8).join(" OR ");
+  return [
+    `\"${companyName}\" официальный сайт контакты руководство`,
+    `\"${companyName}\" (${roleQuery}) email Telegram`,
+  ];
+}
+
 export function searchEvidence(results: SearchResult[]): Evidence[] {
-  return results.map((result) => ({ source: "search", url: result.url, title: result.title, snippet: result.content }));
+  return results.map((result) => ({
+    source: result.provider ?? "search",
+    url: result.url,
+    title: result.title,
+    snippet: result.content,
+    ...(result.query ? { query: result.query } : {}),
+    ...(result.publishedAt !== undefined ? { publishedAt: result.publishedAt } : {}),
+    discoveredAt: new Date().toISOString(),
+  }));
 }
 
 export function chooseLikelyOfficialWebsite(companyName: string, results: SearchResult[]): string | null {

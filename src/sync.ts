@@ -7,9 +7,13 @@ function candidateLabel(candidate: ContactCandidate): string {
   return candidate.fullName || candidate.emails[0]?.value || candidate.phones[0] || candidate.socialUrls[0] || "безымянный контакт";
 }
 
+function crmSafeCandidate(candidate: ContactCandidate): ContactCandidate {
+  return { ...candidate, emails: candidate.emails.filter((email) => email.status !== "inferred") };
+}
+
 function noteText(company: CompanyContext, candidate: ContactCandidate, runId: string): string {
   const channels = [
-    ...candidate.emails.map((email) => `${email.value} (${email.deliverability}${email.confidence ? `, ${email.confidence}%` : ""})`),
+    ...candidate.emails.map((email) => `${email.value} (${email.status ?? (email.generic ? "general" : "found")}, ${email.deliverability}${email.confidence ? `, ${email.confidence}%` : ""})`),
     ...candidate.phones,
     ...candidate.socialUrls,
   ];
@@ -63,13 +67,14 @@ export async function syncCandidates(
 
   for (const candidate of candidates) {
     try {
-      const existing = await amo.findContact(candidate);
+      const writable = crmSafeCandidate(candidate);
+      const existing = await amo.findContact(writable);
       let contactId = existing?.id ?? null;
       if (existing) {
         await perform(actions, "reuse_contact", `${candidateLabel(candidate)} → контакт #${existing.id}`, apply);
       } else {
         await perform(actions, "create_contact", candidateLabel(candidate), apply, async () => {
-          const created = await amo.createContact(company, candidate);
+          const created = await amo.createContact(company, writable);
           contactId = created.id;
         });
       }
