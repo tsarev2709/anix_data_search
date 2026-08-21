@@ -17,6 +17,7 @@ interface AmoLead {
   pipeline_id: number;
   status_id: number;
   responsible_user_id: number;
+  custom_fields_values?: AmoFieldValue[] | null;
   _embedded?: {
     companies?: Array<{ id: number; name?: string }>;
     contacts?: Array<{ id: number; is_main?: boolean }>;
@@ -59,6 +60,11 @@ function websiteFromCompany(company: AmoCompany, configuredFieldId?: number): st
   return values.map(normalizeUrl).find((value): value is string => Boolean(value)) ?? null;
 }
 
+export function companyNameFromLead(lead: Pick<AmoLead, "custom_fields_values">, configuredFieldId?: number): string | null {
+  if (!configuredFieldId) return null;
+  return fieldValues(lead, (field) => field.field_id === configuredFieldId)[0] ?? null;
+}
+
 export class AmoCRMClient {
   private readonly http: HttpOptions;
 
@@ -91,6 +97,7 @@ export class AmoCRMClient {
       leads.map(async (lead) => {
         const companyLink = lead._embedded?.companies?.[0];
         const company = companyLink ? await this.getCompany(companyLink.id) : null;
+        const fallbackCompanyName = companyNameFromLead(lead, this.config.companyNameFieldId);
         return {
           sourceLeadId: lead.id,
           sourceLeadName: lead.name,
@@ -98,9 +105,10 @@ export class AmoCRMClient {
           statusId: lead.status_id,
           responsibleUserId: lead.responsible_user_id || null,
           companyId: company?.id ?? companyLink?.id ?? null,
-          companyName: company?.name || companyLink?.name || lead.name,
+          companyName: company?.name || companyLink?.name || fallbackCompanyName || lead.name,
           website: company ? websiteFromCompany(company, this.config.companyWebsiteFieldId) : null,
           linkedContactIds: (lead._embedded?.contacts ?? []).map((contact) => contact.id),
+          source: "amo" as const,
         };
       }),
     );

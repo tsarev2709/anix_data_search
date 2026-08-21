@@ -14,6 +14,7 @@ const company: CompanyContext = {
   companyName: "Example",
   website: "https://example.com",
   linkedContactIds: [],
+  source: "amo",
 };
 
 const candidate: ContactCandidate = {

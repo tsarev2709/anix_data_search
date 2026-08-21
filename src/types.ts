@@ -8,6 +8,11 @@ export type EvidenceSource =
   | "gdelt"
   | "common_crawl"
   | "github"
+  | "hacker_news"
+  | "stack_exchange"
+  | "youtube"
+  | "feed"
+  | "social"
   | "gemini"
   | "search"
   | "hunter"
@@ -76,6 +81,7 @@ export interface CompanyContext {
   companyName: string;
   website: string | null;
   linkedContactIds: number[];
+  source: "amo" | "manual";
 }
 
 export interface CompanyResearchResult {
@@ -113,6 +119,19 @@ export interface ResearchTrace {
     pdfUrls: string[];
     jsFallbacks: number;
     wordpress: boolean;
+  };
+  socialEnrichment?: {
+    attempted: number;
+    succeeded: number;
+    failed: number;
+    pages: Array<{
+      platform: SocialPlatform;
+      url: string;
+      title: string;
+      emails: string[];
+      phones: string[];
+      socialUrls: string[];
+    }>;
   };
   providers: {
     [provider: string]: ProviderRunStatus;
@@ -173,6 +192,7 @@ export interface SearchResult {
   provider?: EvidenceSource;
   query?: string;
   publishedAt?: string | null;
+  author?: string | null;
 }
 
 export interface CrawledPage {
@@ -182,6 +202,50 @@ export interface CrawledPage {
   emails: string[];
   phones: string[];
   socialUrls: string[];
-  source?: "website" | "rss" | "pdf" | "wordpress";
+  source?: "website" | "rss" | "pdf" | "wordpress" | "social";
   publishedAt?: string | null;
+}
+
+export type DemandIntent = "vendor_search" | "brief" | "tender" | "recommendation" | "problem" | "market_signal";
+export type DemandSignalStatus = "new" | "qualified" | "dismissed";
+
+export interface DemandQuery {
+  id: string;
+  query: string;
+  category: string;
+  intent: DemandIntent;
+  priority: number;
+  locale: "ru" | "en";
+  channel: "web" | "social" | "forum" | "news";
+}
+
+export interface DemandSignal {
+  fingerprint: string;
+  source: EvidenceSource;
+  category: string;
+  intent: DemandIntent;
+  query: string;
+  title: string;
+  url: string;
+  snippet: string;
+  author: string | null;
+  publishedAt: string | null;
+  discoveredAt: string;
+  score: number;
+  scoreReasons: string[];
+  emails: string[];
+  phones: string[];
+  socialUrls: string[];
+  status: DemandSignalStatus;
+}
+
+export interface DemandMonitorReport {
+  runId: string;
+  startedAt: string;
+  finishedAt: string;
+  queries: DemandQuery[];
+  signals: DemandSignal[];
+  providers: Record<string, ProviderRunStatus>;
+  failures: Array<{ provider: string; message: string }>;
+  resultsCount: number;
 }

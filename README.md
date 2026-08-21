@@ -1,15 +1,20 @@
 # Anix Data Search
 
-Облачный еженедельный поиск актуальных деловых контактов для сделок Anix из этапа AmoCRM «Поиск контактов». Отдельный сервер и постоянно включённый компьютер не нужны: процесс запускается в GitHub Actions, складывает кандидатов в закрытую панель проверки и отправляет одобренные записи в CRM.
+Облачная ежедневная система контактной разведки для Anix. Она ищет публичный спрос на видеоконтент, обрабатывает сделки из этапа AmoCRM «Поиск контактов», позволяет глубоко исследовать одну выбранную компанию и складывает результаты в закрытую панель проверки. Отдельный сервер и постоянно включённый компьютер не нужны.
 
 ## Что умеет free-first версия
 
 - забирает ограниченную порцию сделок из заданной воронки и этапа AmoCRM;
+- каждый день мониторит чаты, форумы, соцсети, RSS и новости по расширенной карте запросов на услуги Anix;
+- различает поиск подрядчика, рекомендацию, бриф, тендер, проблему и общий рыночный сигнал;
+- позволяет вручную указать название одной компании и собрать по ней сайт, документы, людей, контакты и публичные профили;
+- использует название компании из связанной компании AmoCRM, настроенного custom field сделки или названия сделки;
 - работает без Tavily, Hunter и OpenAI: параллельно использует SearXNG, Google News RSS, GDELT, Common Crawl и GitHub;
-- при наличии бесплатного Gemini API key добавляет Google Search grounding, но не зависит от него;
+- при наличии Gemini API key добавляет Google Search grounding, но не зависит от него; актуальные условия grounding нужно проверять перед включением;
 - берёт компанию и сайт из карточки, ищет официальный домен, новости, публичные выступления, назначения и профили ЛПР;
 - учитывает `robots.txt`, рекурсивные sitemap, RSS/Atom, WordPress API, HTML/JSON-LD, PDF и ограниченный Playwright fallback для SPA;
 - извлекает email, телефоны, ФИО, должности, Telegram, VK, YouTube, Rutube, TenChat, Threads, Instagram, LinkedIn и GitHub;
+- открывает найденные публичные соцпрофили и извлекает из них описание, свежий публичный текст, email, телефоны и перекрёстные ссылки;
 - проводит второй этап поиска отдельно по наиболее перспективным найденным людям;
 - при наличии Hunter получает имена, должности, источники и проверку доставляемости email;
 - без LLM извлекает русские ФИО и должности детерминированными правилами; OpenAI остаётся опциональным fallback;
@@ -38,7 +43,10 @@
 | Google News RSS + GDELT | нет | свежие назначения, интервью, выступления и новости |
 | Common Crawl | нет | исторически известные полезные URL, которые затем проверяются на живом сайте |
 | GitHub | нет | публичные профили, организации, bio, company, blog и public email |
-| Gemini + Google Search | опциональный free-tier key | grounded web discovery; отсутствие ключа не ухудшает базовый pipeline до нерабочего состояния |
+| Hacker News + Stack Exchange | нет | свежие англоязычные обсуждения и запросы |
+| Публичные RSS/Atom | нет | новые публикации Habr, VC, Reddit и подключённых пользователем источников |
+| YouTube Data API | опциональный key | свежие видео и каналы по карте спроса |
+| Gemini + Google Search | опциональный key | grounded web discovery; текущий API grounding не считается базовым бесплатным источником |
 | Tavily Search | опционально | дополнительный web search fallback |
 | Hunter Domain Search | опционально | дополнительный источник персональных email и confidence |
 | Hunter Email Verifier | опционально | доставляемость; расходует дополнительные запросы |
@@ -59,7 +67,14 @@ npm start
 
 `inspect:amo` выполняет только чтение. Он показывает воронки, этапы и поля, чтобы заполнить ID без угадывания.
 
-Для рабочего запуска настройте GitHub Secrets и Variables по инструкции [docs/setup.md](docs/setup.md), затем вручную запустите workflow **Weekly contact search** с операцией `research` в режиме `dry-run`.
+Для рабочего запуска настройте GitHub Secrets и Variables по инструкции [docs/setup.md](docs/setup.md), затем вручную запустите workflow **Daily contact intelligence**. По расписанию он ежедневно выполняет мониторинг спроса и dry-run поиска 10 компаний из AmoCRM.
+
+Операции workflow:
+
+- `research` — взять очередь из AmoCRM;
+- `research-company` — глубоко исследовать одну компанию по названию и необязательному сайту;
+- `monitor-demand` — обновить радар спроса;
+- `sync-approved` — отправить одобренные контакты в AmoCRM.
 
 ## Команды
 
@@ -75,5 +90,6 @@ npm start
 - [Архитектура и поток данных](docs/architecture.md)
 - [Настройка GitHub и AmoCRM](docs/setup.md)
 - [Эксплуатация, скоринг и восстановление после ошибок](docs/operations.md)
+- [План подключения дополнительных API](docs/api-roadmap.md)
 
 Использованные API: [AmoCRM сделки](https://www.amocrm.ru/developers/content/crm_platform/leads-api), [контакты](https://www.amocrm.ru/developers/content/crm_platform/contacts-api), [связи](https://www.amocrm.ru/developers/content/crm_platform/entity-links-api), [Hunter API v2](https://hunter.io/api-documentation/v2), [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search), [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).

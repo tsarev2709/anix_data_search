@@ -19,8 +19,7 @@ export class GdeltProvider implements SearchProvider {
   readonly source = "gdelt" as const;
   constructor(private readonly http: HttpOptions) {}
 
-  async searchCompany(companyName: string): Promise<ProviderSearchResult> {
-    const queries = [`"${companyName}"`, `"${companyName}" (director OR CEO OR interview)`, `"${companyName}" (appointed OR conference)`];
+  private async searchQueries(queries: string[]): Promise<ProviderSearchResult> {
     const results: SearchResult[] = [];
     const warnings: string[] = [];
     let successful = 0;
@@ -49,5 +48,13 @@ export class GdeltProvider implements SearchProvider {
     }));
     successful = outcomes.filter(Boolean).length;
     return { provider: this.name, source: this.source, status: successful > 0 ? "used" : "failed", queries, results: uniqueBy(results, (item) => item.url), warnings };
+  }
+
+  searchCompany(companyName: string): Promise<ProviderSearchResult> {
+    return this.searchQueries([`"${companyName}"`, `"${companyName}" (director OR CEO OR interview)`, `"${companyName}" (appointed OR conference)`]);
+  }
+
+  searchDemand(queries: string[]): Promise<ProviderSearchResult> {
+    return this.searchQueries(queries.slice(0, 6));
   }
 }

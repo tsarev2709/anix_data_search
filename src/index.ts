@@ -14,7 +14,9 @@ import { MultiSearchProvider } from "./providers/multi-search.js";
 import { SearxngProvider } from "./providers/searxng.js";
 import { TavilySearch } from "./providers/search.js";
 import { WebsiteCrawler } from "./providers/website.js";
-import { writeReport } from "./report.js";
+import { SocialProfileEnricher } from "./providers/social-enrichment.js";
+import { monitorDemand } from "./demand/monitor.js";
+import { writeDemandReport, writeReport } from "./report.js";
 import { SupabaseRepository } from "./supabase.js";
 import { syncCandidates } from "./sync.js";
 import type { CompanyResearchResult, RunReport } from "./types.js";
@@ -51,9 +53,29 @@ async function main(): Promise<void> {
     await syncApproved(amo, config, repository, runId);
     return;
   }
+
+  let demandFailed = false;
+  if (config.run.operation === "monitor-demand" || config.run.operation === "daily") {
+    try {
+      console.log(`[${runId}] demand monitoring started`);
+      const demandReport = await monitorDemand(config, runId);
+      await writeDemandReport(demandReport);
+      if (repository) await repository.saveDemandReport(demandReport);
+      console.log(`[${runId}] demand monitoring finished: signals=${demandReport.signals.length} failures=${demandReport.failures.length}`);
+    } catch (error) {
+      demandFailed = true;
+      console.error(JSON.stringify({ event: "demand_monitor_failed", runId, error: error instanceof Error ? error.message : String(error) }));
+    }
+    if (config.run.operation === "monitor-demand") {
+      if (demandFailed) process.exitCode = 1;
+      return;
+    }
+  }
+
   const dependencies: PipelineDependencies = {
     amo,
     crawler: new WebsiteCrawler(config.http, config.run.maxPagesPerSite),
+    socialEnricher: new SocialProfileEnricher(config.http),
     commonCrawl: new CommonCrawlProvider(config.http),
     search: new MultiSearchProvider([
       new SearxngProvider(config.http, config.providers.searxngInstances),
@@ -70,7 +92,20 @@ async function main(): Promise<void> {
   };
 
   console.log(`[${runId}] mode=${config.run.mode} writeMode=${config.amo.writeMode} maxCompanies=${config.run.maxCompanies}`);
-  const companies = await amo.listSourceCompanies(config.run.maxCompanies);
+  const companies = config.run.operation === "research-company"
+    ? [{
+        sourceLeadId: 0,
+        sourceLeadName: `Ручной поиск: ${config.run.manualCompanyName}`,
+        pipelineId: config.amo.pipelineId,
+        statusId: config.amo.sourceStatusId,
+        responsibleUserId: null,
+        companyId: null,
+        companyName: config.run.manualCompanyName!,
+        website: config.run.manualCompanyWebsite ?? null,
+        linkedContactIds: [],
+        source: "manual" as const,
+      }]
+    : await amo.listSourceCompanies(config.run.maxCompanies);
   console.log(`[${runId}] source companies=${companies.length}`);
   const results: CompanyResearchResult[] = [];
 
@@ -115,6 +150,7 @@ async function main(): Promise<void> {
             github: "skipped",
             website: "failed",
             common_crawl: "skipped",
+            social_enrichment: "skipped",
             gemini: config.providers.geminiApiKey ? "skipped" : "disabled",
             tavily: config.providers.tavilyApiKey ? "skipped" : "disabled",
             hunter: config.providers.hunterApiKey ? "skipped" : "disabled",
@@ -170,7 +206,7 @@ async function main(): Promise<void> {
   await writeReport(report);
   if (repository) await repository.saveReport(report);
   console.log(`[${runId}] finished: selected=${report.totals.selected} failures=${report.totals.failures}`);
-  if (report.totals.failures > 0) process.exitCode = 1;
+  if (report.totals.failures > 0 || demandFailed) process.exitCode = 1;
 }
 
 await main();

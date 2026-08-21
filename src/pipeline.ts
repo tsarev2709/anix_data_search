@@ -11,6 +11,7 @@ import { LlmExtractor } from "./providers/llm.js";
 import { MultiSearchProvider } from "./providers/multi-search.js";
 import { chooseLikelyOfficialWebsite, searchEvidence } from "./providers/search.js";
 import { pageEvidence, WebsiteCrawler } from "./providers/website.js";
+import { SocialProfileEnricher } from "./providers/social-enrichment.js";
 import { syncCandidates } from "./sync.js";
 
 export interface PipelineDependencies {
@@ -18,6 +19,7 @@ export interface PipelineDependencies {
   crawler: WebsiteCrawler;
   search: MultiSearchProvider;
   commonCrawl: CommonCrawlProvider;
+  socialEnricher: SocialProfileEnricher;
   hunter?: HunterProvider;
   llm?: LlmExtractor;
 }
@@ -48,6 +50,7 @@ function providerDefaults(dependencies: PipelineDependencies): Record<string, Pr
     github: "skipped",
     website: "skipped",
     common_crawl: "skipped",
+    social_enrichment: "skipped",
     tavily: "disabled",
     hunter: dependencies.hunter ? "skipped" : "disabled",
     openai: dependencies.llm ? "skipped" : "disabled",
@@ -71,6 +74,7 @@ export async function researchCompany(
   let searchQueries: string[] = [];
   let crawledPages: Array<{ url: string; title: string; emails: string[]; phones: string[]; socialUrls: string[] }> = [];
   let crawlDiagnostics;
+  let socialEnrichment;
 
   try {
     const discovery = await dependencies.search.searchCompany(company.companyName, config.run.targetRoles);
@@ -124,6 +128,38 @@ export async function researchCompany(
   candidates.push(...candidatesFromEvidence(evidence));
   candidates.push(...extractPeopleFromEvidence(evidence, config.run.targetRoles));
   candidates.push(...socialCandidates(evidence, company.companyName));
+
+  const profilesToEnrich = extractSocialProfiles(evidence, company.companyName);
+  if (profilesToEnrich.length > 0) {
+    const enriched = await dependencies.socialEnricher.enrich(profilesToEnrich);
+    const socialPages = enriched.pages.map((item) => item.page);
+    const socialEvidence = pageEvidence(socialPages);
+    providers.social_enrichment = enriched.pages.length > 0 ? "used" : enriched.warnings.length > 0 ? "failed" : "skipped";
+    warnings.push(...enriched.warnings);
+    if (enriched.warnings.length > 0 && enriched.pages.length === 0) {
+      providerFailures.push({ provider: "social_enrichment", message: enriched.warnings.join("; ") });
+    }
+    evidence.push(...socialEvidence);
+    candidates.push(...candidatesFromPages(socialPages, socialEvidence));
+    candidates.push(...candidatesFromEvidence(socialEvidence));
+    candidates.push(...extractPeopleFromEvidence(socialEvidence, config.run.targetRoles));
+    candidates.push(...socialCandidates(socialEvidence, company.companyName));
+    socialEnrichment = {
+      attempted: enriched.attempted,
+      succeeded: enriched.pages.length,
+      failed: Math.max(0, enriched.attempted - enriched.pages.length),
+      pages: enriched.pages.map((item) => ({
+        platform: item.platform,
+        url: item.profileUrl,
+        title: item.page.title,
+        emails: item.page.emails,
+        phones: item.page.phones,
+        socialUrls: item.page.socialUrls,
+      })),
+    };
+  } else {
+    socialEnrichment = { attempted: 0, succeeded: 0, failed: 0, pages: [] };
+  }
 
   const personNames = uniqueBy(candidates.filter((candidate) => candidate.fullName), (candidate) => candidate.fullName!.toLowerCase()).slice(0, 3);
   for (const person of personNames) {
@@ -181,7 +217,9 @@ export async function researchCompany(
     config.run.maxContactsPerCompany,
     config.run.includeGenericEmails,
   );
-  const actions = await syncCandidates(dependencies.amo, config, company, selected, runId);
+  const actions = company.source === "manual"
+    ? [{ type: "skip" as const, status: "planned" as const, detail: "Ручной поиск: запись в AmoCRM отключена" }]
+    : await syncCandidates(dependencies.amo, config, company, selected, runId);
   const socialProfiles = extractSocialProfiles(evidence, company.companyName);
 
   return {
@@ -198,6 +236,7 @@ export async function researchCompany(
       peopleFound: new Set(scored.map((candidate) => candidate.fullName).filter(Boolean)).size,
       providerFailures,
       ...(crawlDiagnostics ? { crawlDiagnostics } : {}),
+      socialEnrichment,
       providers,
     },
     warnings: uniqueBy(warnings.map((message) => ({ message })), (item) => item.message).map((item) => item.message),

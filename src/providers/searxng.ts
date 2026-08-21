@@ -131,4 +131,8 @@ export class SearxngProvider implements SearchProvider {
   searchPerson(personName: string, companyName: string) {
     return this.searchQueries(personQueryMatrix(personName, companyName), 8);
   }
+
+  searchDemand(queries: string[]) {
+    return this.searchQueries(queries, queries.length);
+  }
 }

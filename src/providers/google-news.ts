@@ -23,8 +23,7 @@ export class GoogleNewsProvider implements SearchProvider {
   readonly source = "google_news" as const;
   constructor(private readonly http: HttpOptions) {}
 
-  async searchCompany(companyName: string): Promise<ProviderSearchResult> {
-    const queries = newsQueries(companyName);
+  private async searchQueries(queries: string[]): Promise<ProviderSearchResult> {
     const results: SearchResult[] = [];
     const warnings: string[] = [];
     let successful = 0;
@@ -60,5 +59,13 @@ export class GoogleNewsProvider implements SearchProvider {
     }));
     successful = outcomes.filter(Boolean).length;
     return { provider: this.name, source: this.source, status: successful > 0 ? "used" : "failed", queries, results: uniqueBy(results, (item) => item.url), warnings };
+  }
+
+  searchCompany(companyName: string): Promise<ProviderSearchResult> {
+    return this.searchQueries(newsQueries(companyName));
+  }
+
+  searchDemand(queries: string[]): Promise<ProviderSearchResult> {
+    return this.searchQueries(queries.slice(0, 10));
   }
 }

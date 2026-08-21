@@ -21,9 +21,12 @@ const schema = z
     AMO_OUTPUT_PIPELINE_ID: optionalInteger,
     AMO_OUTPUT_STATUS_ID: optionalInteger,
     AMO_COMPANY_WEBSITE_FIELD_ID: optionalInteger,
+    AMO_COMPANY_NAME_FIELD_ID: optionalInteger,
     AMO_CONTACT_POSITION_FIELD_ID: optionalInteger,
-    CONTACT_SEARCH_OPERATION: z.enum(["research", "sync-approved"]).default("research"),
+    CONTACT_SEARCH_OPERATION: z.enum(["research", "research-company", "monitor-demand", "daily", "sync-approved"]).default("research"),
     CONTACT_SEARCH_MODE: z.enum(["dry-run", "apply"]).default("dry-run"),
+    MANUAL_COMPANY_NAME: z.string().optional(),
+    MANUAL_COMPANY_WEBSITE: z.string().url().optional(),
     MAX_COMPANIES: z.coerce.number().int().min(1).max(250).default(10),
     MAX_CONTACTS_PER_COMPANY: z.coerce.number().int().min(1).max(20).default(5),
     MAX_PAGES_PER_SITE: z.coerce.number().int().min(1).max(30).default(8),
@@ -45,6 +48,10 @@ const schema = z
     GEMINI_MODEL: z.string().default("gemini-3.1-flash-lite"),
     SEARXNG_INSTANCES: z.string().optional(),
     GITHUB_OSINT_TOKEN: z.string().optional(),
+    YOUTUBE_API_KEY: z.string().optional(),
+    DEMAND_QUERY_BUDGET: z.coerce.number().int().min(5).max(120).default(36),
+    DEMAND_MAX_SIGNALS: z.coerce.number().int().min(10).max(500).default(120),
+    DEMAND_FEEDS: z.string().optional(),
     SUPABASE_URL: z.string().url().optional(),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
     HTTP_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
@@ -70,6 +77,9 @@ const schema = z
     if (value.CONTACT_SEARCH_OPERATION === "sync-approved" && value.CONTACT_SEARCH_MODE !== "apply") {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["CONTACT_SEARCH_MODE"], message: "sync-approved requires apply mode" });
     }
+    if (value.CONTACT_SEARCH_OPERATION === "research-company" && !value.MANUAL_COMPANY_NAME?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["MANUAL_COMPANY_NAME"], message: "required for research-company" });
+    }
   });
 
 export type Config = ReturnType<typeof loadConfig>;
@@ -86,6 +96,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     TAVILY_API_KEY: nonEmpty(env.TAVILY_API_KEY),
     HUNTER_API_KEY: nonEmpty(env.HUNTER_API_KEY),
     OPENAI_API_KEY: nonEmpty(env.OPENAI_API_KEY),
+    MANUAL_COMPANY_NAME: nonEmpty(env.MANUAL_COMPANY_NAME),
+    MANUAL_COMPANY_WEBSITE: nonEmpty(env.MANUAL_COMPANY_WEBSITE),
+    YOUTUBE_API_KEY: nonEmpty(env.YOUTUBE_API_KEY),
+    DEMAND_FEEDS: nonEmpty(env.DEMAND_FEEDS),
     SUPABASE_URL: nonEmpty(env.SUPABASE_URL)?.replace(/\/$/, ""),
     SUPABASE_SERVICE_ROLE_KEY: nonEmpty(env.SUPABASE_SERVICE_ROLE_KEY),
   });
@@ -101,6 +115,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       outputPipelineId: parsed.AMO_OUTPUT_PIPELINE_ID,
       outputStatusId: parsed.AMO_OUTPUT_STATUS_ID,
       companyWebsiteFieldId: parsed.AMO_COMPANY_WEBSITE_FIELD_ID,
+      companyNameFieldId: parsed.AMO_COMPANY_NAME_FIELD_ID,
       contactPositionFieldId: parsed.AMO_CONTACT_POSITION_FIELD_ID,
     },
     run: {
@@ -114,6 +129,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       createFollowUpTask: parsed.CREATE_FOLLOW_UP_TASK,
       followUpDays: parsed.FOLLOW_UP_DAYS,
       targetRoles: parsed.TARGET_ROLES.split("|").map((role) => role.trim()).filter(Boolean),
+      manualCompanyName: parsed.MANUAL_COMPANY_NAME,
+      manualCompanyWebsite: parsed.MANUAL_COMPANY_WEBSITE,
     },
     providers: {
       tavilyApiKey: parsed.TAVILY_API_KEY,
@@ -125,6 +142,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       geminiModel: parsed.GEMINI_MODEL,
       searxngInstances: nonEmpty(parsed.SEARXNG_INSTANCES)?.split(",").map((value) => value.trim()).filter(Boolean),
       githubToken: nonEmpty(parsed.GITHUB_OSINT_TOKEN),
+      youtubeApiKey: parsed.YOUTUBE_API_KEY,
+    },
+    demand: {
+      queryBudget: parsed.DEMAND_QUERY_BUDGET,
+      maxSignals: parsed.DEMAND_MAX_SIGNALS,
+      feeds: parsed.DEMAND_FEEDS?.split(",").map((value) => value.trim()).filter(Boolean) ?? [],
     },
     storage:
       parsed.SUPABASE_URL && parsed.SUPABASE_SERVICE_ROLE_KEY

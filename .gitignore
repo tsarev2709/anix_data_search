@@ -7,4 +7,5 @@ reports/
 amo-structure*.json
 coverage/
 *.log
+*.tsbuildinfo
 .DS_Store

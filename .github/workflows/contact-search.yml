@@ -1,9 +1,9 @@
-name: Weekly contact search
+name: Daily contact intelligence
 
 on:
   schedule:
-    # Monday, 09:00 Moscow time (GitHub cron is UTC).
-    - cron: "0 6 * * 1"
+    # Every day, 05:20 Moscow time (GitHub cron is UTC).
+    - cron: "20 2 * * *"
   workflow_dispatch:
     inputs:
       operation:
@@ -13,6 +13,8 @@ on:
         type: choice
         options:
           - research
+          - research-company
+          - monitor-demand
           - sync-approved
       mode:
         description: "Run mode"
@@ -27,18 +29,26 @@ on:
         required: true
         default: "10"
         type: string
+      company_name:
+        description: "Company name for research-company"
+        required: false
+        type: string
+      company_website:
+        description: "Optional company website"
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: weekly-contact-search
+  group: daily-contact-intelligence
   cancel-in-progress: false
 
 jobs:
   research:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     env:
       AMO_BASE_URL: ${{ secrets.AMO_BASE_URL }}
       AMO_ACCESS_TOKEN: ${{ secrets.AMO_ACCESS_TOKEN }}
@@ -49,9 +59,12 @@ jobs:
       AMO_OUTPUT_PIPELINE_ID: ${{ vars.AMO_OUTPUT_PIPELINE_ID }}
       AMO_OUTPUT_STATUS_ID: ${{ vars.AMO_OUTPUT_STATUS_ID }}
       AMO_COMPANY_WEBSITE_FIELD_ID: ${{ vars.AMO_COMPANY_WEBSITE_FIELD_ID }}
+      AMO_COMPANY_NAME_FIELD_ID: ${{ vars.AMO_COMPANY_NAME_FIELD_ID }}
       AMO_CONTACT_POSITION_FIELD_ID: ${{ vars.AMO_CONTACT_POSITION_FIELD_ID }}
-      CONTACT_SEARCH_OPERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.operation || 'research' }}
-      CONTACT_SEARCH_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'sync-approved' && 'apply' || github.event_name == 'workflow_dispatch' && inputs.mode || (vars.AUTO_APPLY == 'true' && 'apply' || 'dry-run') }}
+      CONTACT_SEARCH_OPERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.operation || 'daily' }}
+      CONTACT_SEARCH_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'sync-approved' && 'apply' || github.event_name == 'workflow_dispatch' && inputs.mode || 'dry-run' }}
+      MANUAL_COMPANY_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.company_name || '' }}
+      MANUAL_COMPANY_WEBSITE: ${{ github.event_name == 'workflow_dispatch' && inputs.company_website || '' }}
       MAX_COMPANIES: ${{ github.event_name == 'workflow_dispatch' && inputs.max_companies || vars.MAX_COMPANIES || '10' }}
       MAX_CONTACTS_PER_COMPANY: ${{ vars.MAX_CONTACTS_PER_COMPANY || '5' }}
       MAX_PAGES_PER_SITE: ${{ vars.MAX_PAGES_PER_SITE || '8' }}
@@ -69,6 +82,10 @@ jobs:
       GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.1-flash-lite' }}
       SEARXNG_INSTANCES: ${{ vars.SEARXNG_INSTANCES }}
       GITHUB_OSINT_TOKEN: ${{ github.token }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      DEMAND_QUERY_BUDGET: ${{ vars.DEMAND_QUERY_BUDGET || '36' }}
+      DEMAND_MAX_SIGNALS: ${{ vars.DEMAND_MAX_SIGNALS || '120' }}
+      DEMAND_FEEDS: ${{ vars.DEMAND_FEEDS }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
@@ -81,11 +98,14 @@ jobs:
       - name: Install Chromium for selective JavaScript fallback
         run: npx playwright install --with-deps chromium
       - run: npm run check
-      - name: Research and sync
+      - name: Run contact intelligence
         run: npm start
       - name: Add report to job summary
         if: always()
         run: |
+          if [ -f reports/demand-latest.md ]; then
+            cat reports/demand-latest.md >> "$GITHUB_STEP_SUMMARY"
+          fi
           if [ -f reports/latest.md ]; then
             cat reports/latest.md >> "$GITHUB_STEP_SUMMARY"
           fi

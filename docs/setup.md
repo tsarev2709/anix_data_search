@@ -31,7 +31,8 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 |---|---:|---|
 | `AMO_BASE_URL` | да | `https://studioanixaipro.amocrm.ru` |
 | `AMO_ACCESS_TOKEN` | да | токен интеграции |
-| `GEMINI_API_KEY` | нет | бесплатный Google AI Studio key для Gemini Search grounding |
+| `GEMINI_API_KEY` | нет | Gemini extraction/grounding; перед включением проверить текущий тариф |
+| `YOUTUBE_API_KEY` | нет | свежий поиск видео и каналов для радара спроса |
 | `TAVILY_API_KEY` | нет | дополнительный платный/лимитированный поиск |
 | `HUNTER_API_KEY` | нет | дополнительный Domain Search / Verifier |
 | `OPENAI_API_KEY` | нет | включает структурирование имён и ролей |
@@ -59,8 +60,9 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 | `AMO_OUTPUT_PIPELINE_ID` | пусто | только для `new_lead` |
 | `AMO_OUTPUT_STATUS_ID` | пусто | только для `new_lead` |
 | `AMO_COMPANY_WEBSITE_FIELD_ID` | пусто | если поле сайта не определяется автоматически |
+| `AMO_COMPANY_NAME_FIELD_ID` | пусто | fallback названия компании из custom field сделки |
 | `AMO_CONTACT_POSITION_FIELD_ID` | пусто | куда записывать должность |
-| `MAX_COMPANIES` | `10` | недельная порция |
+| `MAX_COMPANIES` | `10` | ежедневная порция |
 | `MAX_CONTACTS_PER_COMPANY` | `5` | предел на компанию |
 | `MAX_PAGES_PER_SITE` | `8` | предел краулинга |
 | `MIN_CONTACT_SCORE` | `35` | порог персонального контакта |
@@ -68,8 +70,11 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 | `CREATE_FOLLOW_UP_TASK` | `true` | задача ответственному |
 | `FOLLOW_UP_DAYS` | `2` | срок задачи |
 | `HUNTER_VERIFY_EMAILS` | `false` | включать после оценки расхода квоты |
-| `GEMINI_MODEL` | `gemini-3.1-flash-lite` | модель с Google Search grounding; при изменении сверить доступность в своём free tier |
+| `GEMINI_MODEL` | `gemini-3.1-flash-lite` | модель Gemini; grounding может тарифицироваться отдельно |
 | `SEARXNG_INSTANCES` | пусто | необязательный список JSON-enabled instances через запятую; без него используется встроенная ротация |
+| `DEMAND_QUERY_BUDGET` | `36` | сколько запросов из расширенного каталога выполнять за день |
+| `DEMAND_MAX_SIGNALS` | `120` | максимум новых сигналов в отчёте |
+| `DEMAND_FEEDS` | пусто | дополнительные RSS/Atom URL через запятую |
 | `OPENAI_MODEL` | `gpt-5.6-luna` | модель извлечения |
 | `AUTO_APPLY` | `false` | главный предохранитель записи |
 | `SUPABASE_PROJECT_ID` | project ref | используется workflow деплоя |
@@ -90,7 +95,7 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 
 ## 5. Первый запуск
 
-1. Actions → **Weekly contact search** → Run workflow.
+1. Actions → **Daily contact intelligence** → Run workflow.
 2. `operation = research`, `mode = dry-run`, `max_companies = 10`.
 3. Открыть job summary и артефакт `contact-search-*`.
 4. Проверить компании, контакты, источники, скоринг и запланированные действия.
@@ -98,6 +103,8 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 6. Проверить карточки AmoCRM: отсутствие дублей, связи, примечания, задачи и переход этапа.
 7. `AUTO_APPLY` оставлять `false`, пока нужен ручной контроль.
 
-Для free-first запуска достаточно обязательных AmoCRM и Supabase secrets. `GEMINI_API_KEY`, Tavily, Hunter и OpenAI можно не добавлять: их статус будет `disabled`, а SearXNG, Google News RSS, GDELT, Common Crawl, GitHub, crawler, PDF и DNS продолжат работать. Публичные SearXNG instances нестабильны по своей природе; ошибки и реально отправленные запросы показываются в аудите каждой компании.
+Для free-first запуска достаточно обязательных AmoCRM и Supabase secrets. `YOUTUBE_API_KEY`, `GEMINI_API_KEY`, Tavily, Hunter и OpenAI можно не добавлять: их статус будет `disabled`, а SearXNG, Google News RSS, GDELT, Common Crawl, GitHub, RSS, Hacker News, Stack Exchange, crawler, PDF и DNS продолжат работать. Публичные SearXNG instances нестабильны по своей природе; ошибки и реально отправленные запросы показываются в аудите.
 
-Расписание в workflow: каждый понедельник в 06:00 UTC, то есть 09:00 по Москве.
+Расписание в workflow: ежедневно в 02:20 UTC, то есть 05:20 по Москве. Плановый запуск всегда работает в `dry-run`: он обновляет радар спроса и исследует до 10 компаний из очереди AmoCRM, но не пишет контакты в CRM без ручного одобрения.
+
+Подключение Telegram MTProto, VK, Brave Search и других усилителей описано в [api-roadmap.md](api-roadmap.md).

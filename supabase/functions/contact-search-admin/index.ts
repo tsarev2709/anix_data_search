@@ -76,7 +76,7 @@ async function workflowSnapshot(): Promise<Json> {
   }
 
   const runsResponse = await fetch(
-    `https://api.github.com/repos/${repository}/actions/workflows/contact-search.yml/runs?event=workflow_dispatch&per_page=5`,
+    `https://api.github.com/repos/${repository}/actions/workflows/contact-search.yml/runs?per_page=5`,
     { headers: githubHeaders(token) },
   );
   if (!runsResponse.ok) {
@@ -192,7 +192,7 @@ Deno.serve(async (request) => {
   const pathname = new URL(request.url).pathname;
 
   if (request.method === "GET" && pathname.endsWith("/dashboard")) {
-    const [runsResult, companiesResult, contactsResult, workflow] = await Promise.all([
+    const [runsResult, companiesResult, contactsResult, demandRunsResult, demandSignalsResult, workflow] = await Promise.all([
       admin.from("contact_search_runs").select("*").order("started_at", { ascending: false }).limit(50),
       admin
         .from("contact_search_companies")
@@ -204,11 +204,18 @@ Deno.serve(async (request) => {
         .select("id,company_name,source_lead_id,full_name,position,emails,phones,social_urls,score,score_reasons,evidence,decision,synced_at,created_at")
         .order("created_at", { ascending: false })
         .limit(200),
+      admin.from("demand_monitor_runs").select("*").order("started_at", { ascending: false }).limit(30),
+      admin
+        .from("demand_signals")
+        .select("id,fingerprint,last_run_id,source,category,intent,query,title,url,snippet,author,published_at,first_seen_at,last_seen_at,score,score_reasons,emails,phones,social_urls,status")
+        .order("score", { ascending: false })
+        .order("last_seen_at", { ascending: false })
+        .limit(300),
       workflowSnapshot(),
     ]);
-    if (runsResult.error || companiesResult.error || contactsResult.error) {
+    if (runsResult.error || companiesResult.error || contactsResult.error || demandRunsResult.error || demandSignalsResult.error) {
       return response(request, 500, {
-        error: runsResult.error?.message ?? companiesResult.error?.message ?? contactsResult.error?.message ?? "Query failed",
+        error: runsResult.error?.message ?? companiesResult.error?.message ?? contactsResult.error?.message ?? demandRunsResult.error?.message ?? demandSignalsResult.error?.message ?? "Query failed",
         code: "dashboard_storage_query_failed",
         stage: "supabase_read",
       }, requestId);
@@ -217,6 +224,8 @@ Deno.serve(async (request) => {
       runs: runsResult.data,
       companies: companiesResult.data,
       contacts: contactsResult.data,
+      demand_runs: demandRunsResult.data,
+      demand_signals: demandSignalsResult.data,
       workflow,
       status: {
         amo: Boolean(Deno.env.get("AMO_CONFIGURED")),
@@ -226,7 +235,7 @@ Deno.serve(async (request) => {
       },
       diagnostics: {
         generated_at: new Date().toISOString(),
-        storage: { runs: "ok", companies: "ok", contacts: "ok" },
+        storage: { runs: "ok", companies: "ok", contacts: "ok", demand_runs: "ok", demand_signals: "ok" },
         workflow: (workflow as { available?: boolean }).available ? "ok" : "unavailable",
       },
     }, requestId);
@@ -243,10 +252,24 @@ Deno.serve(async (request) => {
     return response(request, 200, { ok: true, stage: "candidate_updated" }, requestId);
   }
 
+  const demandMatch = pathname.match(/\/demand-signals\/(\d+)$/);
+  if (request.method === "PATCH" && demandMatch) {
+    const body = await request.json().catch(() => ({})) as { status?: string };
+    if (!body.status || !["new", "qualified", "dismissed"].includes(body.status)) {
+      return response(request, 400, { error: "Некорректный статус сигнала", code: "invalid_demand_status", stage: "demand_update" }, requestId);
+    }
+    const { error } = await admin.from("demand_signals").update({ status: body.status }).eq("id", Number(demandMatch[1]));
+    if (error) return response(request, 500, { error: error.message, code: "demand_update_failed", stage: "supabase_write" }, requestId);
+    return response(request, 200, { ok: true, stage: "demand_updated" }, requestId);
+  }
+
   if (request.method === "POST" && pathname.endsWith("/dispatch")) {
-    const body = await request.json().catch(() => ({})) as { operation?: string; max_companies?: number };
-    if (!body.operation || !["research", "sync-approved"].includes(body.operation)) {
+    const body = await request.json().catch(() => ({})) as { operation?: string; max_companies?: number; company_name?: string; company_website?: string };
+    if (!body.operation || !["research", "research-company", "monitor-demand", "sync-approved"].includes(body.operation)) {
       return response(request, 400, { error: "Некорректная операция", code: "invalid_operation", stage: "dispatch_validation" }, requestId);
+    }
+    if (body.operation === "research-company" && !body.company_name?.trim()) {
+      return response(request, 400, { error: "Укажите название компании", code: "company_name_required", stage: "dispatch_validation" }, requestId);
     }
     const githubToken = Deno.env.get("GITHUB_ACTIONS_TOKEN") ?? "";
     const repository = Deno.env.get("GITHUB_REPO") ?? "";
@@ -264,6 +287,8 @@ Deno.serve(async (request) => {
           operation: body.operation,
           mode: body.operation === "sync-approved" ? "apply" : "dry-run",
           max_companies: String(maxCompanies),
+          company_name: body.company_name?.trim() ?? "",
+          company_website: body.company_website?.trim() ?? "",
         },
       }),
     });
@@ -282,6 +307,8 @@ Deno.serve(async (request) => {
         operation: body.operation,
         mode: body.operation === "sync-approved" ? "apply" : "dry-run",
         max_companies: maxCompanies,
+        company_name: body.company_name?.trim() || null,
+        company_website: body.company_website?.trim() || null,
         requested_at: requestedAt,
       },
       trace: [

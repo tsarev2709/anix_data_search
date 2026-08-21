@@ -1,4 +1,4 @@
-import type { CompanyContext, ContactCandidate, RunReport } from "./types.js";
+import type { CompanyContext, ContactCandidate, DemandMonitorReport, RunReport } from "./types.js";
 
 export interface ApprovedCandidate {
   id: number;
@@ -120,6 +120,50 @@ export class SupabaseRepository {
     });
     const rows = await this.request<StoredCandidate[]>(`contact_search_candidates?${query}`);
     return rows.map((row) => ({ id: row.id, company: row.company_context, candidate: row.candidate_payload }));
+  }
+
+  async saveDemandReport(report: DemandMonitorReport): Promise<void> {
+    await this.request("demand_monitor_runs?on_conflict=id", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({
+        id: report.runId,
+        started_at: report.startedAt,
+        finished_at: report.finishedAt,
+        status: report.failures.length > 0 && report.signals.length === 0 ? "failed" : "completed",
+        queries_count: report.queries.length,
+        results_count: report.resultsCount,
+        signals_count: report.signals.length,
+        failures_count: report.failures.length,
+        providers: report.providers,
+        failures: report.failures,
+        query_catalog: report.queries,
+      }),
+    });
+    if (report.signals.length === 0) return;
+    await this.request("demand_signals?on_conflict=fingerprint", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(report.signals.map((signal) => ({
+        fingerprint: signal.fingerprint,
+        last_run_id: report.runId,
+        source: signal.source,
+        category: signal.category,
+        intent: signal.intent,
+        query: signal.query,
+        title: signal.title,
+        url: signal.url,
+        snippet: signal.snippet,
+        author: signal.author,
+        published_at: signal.publishedAt,
+        last_seen_at: signal.discoveredAt,
+        score: signal.score,
+        score_reasons: signal.scoreReasons,
+        emails: signal.emails,
+        phones: signal.phones,
+        social_urls: signal.socialUrls,
+      }))),
+    });
   }
 
   async markSynced(ids: number[]): Promise<void> {

@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { ContactCandidate, RunReport } from "./types.js";
+import type { ContactCandidate, DemandMonitorReport, RunReport } from "./types.js";
 import { escapeMarkdown, safeFilenameDate } from "./utils.js";
 
 function candidateName(candidate: ContactCandidate): string {
@@ -88,5 +88,37 @@ export async function writeReport(report: RunReport, directory = "reports"): Pro
     writeFile(path.join(directory, `report-${suffix}.json`), json, "utf8"),
     writeFile(path.join(directory, "latest.md"), markdown, "utf8"),
     writeFile(path.join(directory, "latest.json"), json, "utf8"),
+  ]);
+}
+
+export function renderDemandMarkdown(report: DemandMonitorReport): string {
+  const lines = [
+    `# Мониторинг спроса — ${report.finishedAt.slice(0, 10)}`,
+    "",
+    `Запуск: \`${report.runId}\` · запросов: ${report.queries.length} · сырых результатов: ${report.resultsCount} · сигналов: ${report.signals.length} · сбоев: ${report.failures.length}`,
+    `Провайдеры: ${Object.entries(report.providers).map(([provider, status]) => `${provider}=${status}`).join(", ")}.`,
+    "",
+    "| Балл | Тип | Источник | Сигнал | Контакты |",
+    "|---:|---|---|---|---|",
+    ...report.signals.map((signal) => {
+      const contacts = [...signal.emails, ...signal.phones, ...signal.socialUrls].join("<br>") || "—";
+      return `| ${signal.score} | ${signal.intent} / ${signal.category} | ${signal.source} | [${escapeMarkdown(signal.title)}](${signal.url}) | ${escapeMarkdown(contacts)} |`;
+    }),
+    "",
+  ];
+  if (report.failures.length > 0) lines.push("## Сбои", "", ...report.failures.map((failure) => `- ${failure.provider}: ${failure.message}`), "");
+  return `${lines.join("\n")}\n`;
+}
+
+export async function writeDemandReport(report: DemandMonitorReport, directory = "reports"): Promise<void> {
+  await mkdir(directory, { recursive: true });
+  const markdown = renderDemandMarkdown(report);
+  const json = `${JSON.stringify(report, null, 2)}\n`;
+  const suffix = safeFilenameDate(report.finishedAt);
+  await Promise.all([
+    writeFile(path.join(directory, `demand-${suffix}.md`), markdown, "utf8"),
+    writeFile(path.join(directory, `demand-${suffix}.json`), json, "utf8"),
+    writeFile(path.join(directory, "demand-latest.md"), markdown, "utf8"),
+    writeFile(path.join(directory, "demand-latest.json"), json, "utf8"),
   ]);
 }
