@@ -92,6 +92,13 @@ async function main(): Promise<void> {
   };
 
   console.log(`[${runId}] mode=${config.run.mode} writeMode=${config.amo.writeMode} maxCompanies=${config.run.maxCompanies}`);
+  const recentSourceLeadIds =
+    repository && config.run.operation !== "research-company"
+      ? await repository.loadRecentSourceLeadIds(config.run.researchCooldownDays)
+      : new Set<number>();
+  if (recentSourceLeadIds.size > 0) {
+    console.log(`[${runId}] rotation cooldown=${config.run.researchCooldownDays}d excludes=${recentSourceLeadIds.size} pool=${config.run.researchPoolSize}`);
+  }
   const companies = config.run.operation === "research-company"
     ? [{
         sourceLeadId: 0,
@@ -105,7 +112,7 @@ async function main(): Promise<void> {
         linkedContactIds: [],
         source: "manual" as const,
       }]
-    : await amo.listSourceCompanies(config.run.maxCompanies);
+    : await amo.listSourceCompanies(config.run.maxCompanies, recentSourceLeadIds, config.run.researchPoolSize);
   console.log(`[${runId}] source companies=${companies.length}`);
   const results: CompanyResearchResult[] = [];
 

@@ -65,6 +65,14 @@ export class GoogleNewsProvider implements SearchProvider {
     return this.searchQueries(newsQueries(companyName));
   }
 
+  searchPerson(personName: string, companyName: string): Promise<ProviderSearchResult> {
+    return this.searchQueries([
+      `"${personName}" "${companyName}"`,
+      `"${personName}" интервью OR конференция OR вебинар`,
+      `"${personName}" Telegram OR VK OR TenChat`,
+    ]);
+  }
+
   searchDemand(queries: string[]): Promise<ProviderSearchResult> {
     return this.searchQueries(queries.slice(0, 10));
   }

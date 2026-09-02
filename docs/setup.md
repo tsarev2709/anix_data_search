@@ -33,6 +33,9 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 | `AMO_ACCESS_TOKEN` | да | токен интеграции |
 | `GEMINI_API_KEY` | нет | Gemini extraction/grounding; перед включением проверить текущий тариф |
 | `YOUTUBE_API_KEY` | нет | свежий поиск видео и каналов для радара спроса |
+| `TELEGRAM_BOT_TOKEN` | для TgNinja | токен бота от BotFather; используется только workflow для установки webhook |
+| `TELEGRAM_WEBHOOK_SECRET` | для TgNinja | случайная строка 32+ символа из латинских букв, цифр, `_` и `-` |
+| `TELEGRAM_MONITOR_CHAT_ID` | нет | ID закрытой группы-приёмника; ограничивает webhook одним чатом |
 | `TAVILY_API_KEY` | нет | дополнительный платный/лимитированный поиск |
 | `HUNTER_API_KEY` | нет | дополнительный Domain Search / Verifier |
 | `OPENAI_API_KEY` | нет | включает структурирование имён и ролей |
@@ -63,6 +66,8 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 | `AMO_COMPANY_NAME_FIELD_ID` | пусто | fallback названия компании из custom field сделки |
 | `AMO_CONTACT_POSITION_FIELD_ID` | пусто | куда записывать должность |
 | `MAX_COMPANIES` | `10` | ежедневная порция |
+| `RESEARCH_POOL_SIZE` | `250` | сколько сделок просмотреть при выборе новой порции |
+| `RESEARCH_COOLDOWN_DAYS` | `7` | не исследовать ту же сделку повторно столько дней |
 | `MAX_CONTACTS_PER_COMPANY` | `5` | предел на компанию |
 | `MAX_PAGES_PER_SITE` | `8` | предел краулинга |
 | `MIN_CONTACT_SCORE` | `35` | порог персонального контакта |
@@ -93,7 +98,22 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 
 В браузер попадают только URL Supabase и anon key. Service role, AmoCRM и GitHub token остаются в server-side secrets. RLS не даёт браузерному пользователю прямого доступа к таблицам; чтение и решения проходят через Edge Function с allowlist email.
 
-## 5. Первый запуск
+## 5. Подключение TgNinja без MTProto
+
+Этот путь использует уже имеющиеся аккаунты TgNinja и не требует доступа к `my.telegram.org`.
+
+1. В **@BotFather** создайте отдельного бота командой `/newbot` и скопируйте token в GitHub Secret `TELEGRAM_BOT_TOKEN`.
+2. Там же выполните `/setprivacy` → выберите бота → **Disable**, либо добавьте бота администратором закрытой группы-приёмника.
+3. Создайте закрытую Telegram-группу, например «Anix · радар спроса», добавьте туда бота и оба аккаунта TgNinja.
+4. Создайте случайный webhook secret длиной 32+ символа и добавьте его как `TELEGRAM_WEBHOOK_SECRET`. Допустимы `A-Z a-z 0-9 _ -`.
+5. Необязательно: узнайте числовой ID группы через `getUpdates` до установки webhook или через служебного ID-бота и добавьте `TELEGRAM_MONITOR_CHAT_ID` (обычно начинается с `-100`).
+6. Запустите **Deploy admin dashboard**. Workflow сам передаст secret в Supabase, развернёт Edge Function и вызовет Telegram `setWebhook`.
+7. В TgNinja включите «Перехват из чатов и каналов»: источники — нужные публичные группы/каналы, ключи — карта запросов из [api-roadmap.md](api-roadmap.md), приёмник — созданная закрытая группа.
+8. Перешлите тестовое сообщение. В панели **Спрос** должна появиться запись с источником `telegram_ninja`, исходным текстом, автором, ссылкой, email/телефоном и оценкой.
+
+Два аккаунта TgNinja можно разделить по сегментам, например: первый — видеопродакшн/маркетинг/тендеры, второй — HR/L&D/охрана труда/промышленность. Telegram MTProto после этого остаётся необязательным усилителем, а не блокером.
+
+## 6. Первый запуск
 
 1. Actions → **Daily contact intelligence** → Run workflow.
 2. `operation = research`, `mode = dry-run`, `max_companies = 10`.
@@ -105,6 +125,6 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 
 Для free-first запуска достаточно обязательных AmoCRM и Supabase secrets. `YOUTUBE_API_KEY`, `GEMINI_API_KEY`, Tavily, Hunter и OpenAI можно не добавлять: их статус будет `disabled`, а SearXNG, Google News RSS, GDELT, Common Crawl, GitHub, RSS, Hacker News, Stack Exchange, crawler, PDF и DNS продолжат работать. Публичные SearXNG instances нестабильны по своей природе; ошибки и реально отправленные запросы показываются в аудите.
 
-Расписание в workflow: ежедневно в 02:20 UTC, то есть 05:20 по Москве. Плановый запуск всегда работает в `dry-run`: он обновляет радар спроса и исследует до 10 компаний из очереди AmoCRM, но не пишет контакты в CRM без ручного одобрения.
+Расписание в workflow: ежедневно в 02:20 UTC, то есть 05:20 по Москве. Плановый запуск всегда работает в `dry-run`: он обновляет радар спроса и исследует до 10 компаний из очереди AmoCRM, пропуская сделки, исследованные за последние 7 дней. Он не пишет контакты в CRM без ручного одобрения.
 
-Подключение Telegram MTProto, VK, Brave Search и других усилителей описано в [api-roadmap.md](api-roadmap.md).
+Подключение TgNinja, Telegram MTProto, VK, Brave Search и других усилителей описано в [api-roadmap.md](api-roadmap.md).

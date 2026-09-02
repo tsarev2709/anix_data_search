@@ -1,5 +1,5 @@
 import type { HttpOptions } from "../http.js";
-import { requestJson } from "../http.js";
+import { HttpError, requestJson } from "../http.js";
 import type { SearchResult } from "../types.js";
 import { truncate, uniqueBy } from "../utils.js";
 import type { ProviderSearchResult, SearchProvider } from "./search-provider.js";
@@ -21,9 +21,13 @@ interface GeminiResponse {
 export class GeminiGroundedProvider implements SearchProvider {
   readonly name = "gemini";
   readonly source = "gemini" as const;
+  private disabledReason: string | null = null;
   constructor(private readonly apiKey: string, private readonly model: string, private readonly http: HttpOptions) {}
 
   async searchCompany(companyName: string, targetRoles: string[]): Promise<ProviderSearchResult> {
+    if (this.disabledReason) {
+      return { provider: this.name, source: this.source, status: "skipped", queries: [], results: [], warnings: [this.disabledReason] };
+    }
     const prompt = [
       `Проведи evidence-first web research компании «${companyName}».`,
       `Найди официальный сайт, актуальных людей и публичные способы связи для ролей: ${targetRoles.join(", ")}.`,
@@ -54,7 +58,11 @@ export class GeminiGroundedProvider implements SearchProvider {
       });
       return { provider: this.name, source: this.source, status: "used", queries, results: uniqueBy(results, (item) => item.url), warnings: results.length === 0 ? ["Gemini выполнил запрос, но не вернул grounding URL"] : [] };
     } catch (error) {
-      return { provider: this.name, source: this.source, status: "failed", queries: [prompt], results: [], warnings: [`Gemini: ${error instanceof Error ? error.message : String(error)}`] };
+      const message = `Gemini: ${error instanceof Error ? error.message : String(error)}`;
+      if (error instanceof HttpError && [400, 401, 403, 404, 429].includes(error.status)) {
+        this.disabledReason = `Gemini отключён до следующего запуска после фатального ответа: ${error.message}`;
+      }
+      return { provider: this.name, source: this.source, status: "failed", queries: [prompt], results: [], warnings: [message] };
     }
   }
 }

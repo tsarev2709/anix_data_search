@@ -83,18 +83,37 @@ export class AmoCRMClient {
     return requestJson<T>(`${this.config.baseUrl}${path}`, { ...init, headers }, this.http);
   }
 
-  async listSourceCompanies(limit: number): Promise<CompanyContext[]> {
-    const query = new URLSearchParams();
-    query.set("with", "companies,contacts");
-    query.set("limit", String(limit));
-    query.set("order[id]", "asc");
-    query.set("filter[statuses][0][pipeline_id]", String(this.config.pipelineId));
-    query.set("filter[statuses][0][status_id]", String(this.config.sourceStatusId));
-    const response = await this.request<Collection<AmoLead>>(`/api/v4/leads?${query.toString()}`);
-    const leads = response._embedded?.leads ?? [];
+  async listSourceCompanies(
+    limit: number,
+    excludeLeadIds: ReadonlySet<number> = new Set(),
+    poolSize = 250,
+  ): Promise<CompanyContext[]> {
+    const leads: AmoLead[] = [];
+    const pageSize = Math.min(250, Math.max(limit, poolSize));
+    let page = 1;
+
+    while (leads.length < poolSize) {
+      const query = new URLSearchParams();
+      query.set("with", "companies,contacts");
+      query.set("limit", String(pageSize));
+      query.set("page", String(page));
+      query.set("order[id]", "asc");
+      query.set("filter[statuses][0][pipeline_id]", String(this.config.pipelineId));
+      query.set("filter[statuses][0][status_id]", String(this.config.sourceStatusId));
+      const response = await this.request<Collection<AmoLead>>(`/api/v4/leads?${query.toString()}`);
+      const batch = response._embedded?.leads ?? [];
+      leads.push(...batch);
+      if (batch.length < pageSize) break;
+      page += 1;
+    }
+
+    const selectedLeads = leads
+      .slice(0, poolSize)
+      .filter((lead) => !excludeLeadIds.has(lead.id))
+      .slice(0, limit);
 
     return Promise.all(
-      leads.map(async (lead) => {
+      selectedLeads.map(async (lead) => {
         const companyLink = lead._embedded?.companies?.[0];
         const company = companyLink ? await this.getCompany(companyLink.id) : null;
         const fallbackCompanyName = companyNameFromLead(lead, this.config.companyNameFieldId);

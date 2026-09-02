@@ -36,6 +36,19 @@ export class SupabaseRepository {
     return (text ? JSON.parse(text) : undefined) as T;
   }
 
+  async loadRecentSourceLeadIds(days: number): Promise<Set<number>> {
+    if (days <= 0) return new Set();
+    const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+    const query = new URLSearchParams({
+      select: "source_lead_id",
+      source_lead_id: "gt.0",
+      created_at: `gte.${cutoff}`,
+      limit: "5000",
+    });
+    const rows = await this.request<Array<{ source_lead_id: number }>>(`contact_search_companies?${query}`);
+    return new Set(rows.map((row) => row.source_lead_id).filter((id) => Number.isInteger(id) && id > 0));
+  }
+
   async saveReport(report: RunReport): Promise<void> {
     await this.request("contact_search_runs?on_conflict=id", {
       method: "POST",

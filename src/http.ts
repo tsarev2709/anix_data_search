@@ -60,6 +60,25 @@ export async function fetchWithRetry(
   throw lastError instanceof Error ? lastError : new Error("HTTP request failed");
 }
 
+function safeResponseMessage(body: string): string {
+  const compact = body.replace(/\s+/g, " ").trim();
+  if (!compact) return "";
+  try {
+    const parsed = JSON.parse(compact) as { error?: string | { message?: string }; message?: string; errors?: Array<{ message?: string; details?: string }> };
+    const message =
+      (typeof parsed.error === "string" ? parsed.error : parsed.error?.message) ??
+      parsed.message ??
+      parsed.errors?.map((item) => item.message ?? item.details).filter(Boolean).join("; ");
+    if (message) return String(message).slice(0, 500);
+  } catch {
+    // The provider returned text rather than JSON.
+  }
+  return compact
+    .replace(/([?&](?:api_)?key=)[^&\s]+/gi, "$1[REDACTED]")
+    .replace(/(bearer\s+)[\w.-]+/gi, "$1[REDACTED]")
+    .slice(0, 500);
+}
+
 export async function requestJson<T>(
   input: string | URL,
   init: RequestInit,
@@ -68,7 +87,8 @@ export async function requestJson<T>(
   const response = await fetchWithRetry(input, init, options);
   const body = await response.text();
   if (!response.ok) {
-    throw new HttpError(`${init.method ?? "GET"} ${safeRequestTarget(input)} returned ${response.status}`, response.status, body);
+    const detail = safeResponseMessage(body);
+    throw new HttpError(`${init.method ?? "GET"} ${safeRequestTarget(input)} returned ${response.status}${detail ? `: ${detail}` : ""}`, response.status, body);
   }
   return body ? (JSON.parse(body) as T) : (undefined as T);
 }

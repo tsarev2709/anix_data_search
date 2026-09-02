@@ -159,6 +159,8 @@ export function scoreCandidate(candidate: ContactCandidate, targetRoles: string[
   const confidence = Math.max(0, ...candidate.emails.map((email) => email.confidence ?? 0));
   if (confidence >= 70) add(10, `уверенность провайдера ${confidence}%`);
   if (candidate.phones.length > 0) add(8, "есть телефон");
+  const officialCompanyChannel = !candidate.fullName && candidate.socialUrls.length > 0 && officialEvidence;
+  if (officialCompanyChannel) add(18, "официальный канал компании");
   const socialPlatforms = new Set((candidate.socialProfiles ?? []).map((profile) => profile.platform));
   if (socialPlatforms.has("telegram") && officialEvidence) add(35, "личный или связанный Telegram указан официальным источником");
   else if (socialPlatforms.has("telegram")) add(20, "найден публичный Telegram");
@@ -193,8 +195,9 @@ export function selectCandidates(
     .sort((a, b) => b.score - a.score);
   const selected = scored.filter((candidate) => {
     const personalSocial = candidate.socialUrls.length > 0 && (Boolean(candidate.fullName) || (candidate.socialProfiles ?? []).some((profile) => profile.kind === "person"));
+    const officialCompanyChannel = candidate.socialUrls.length > 0 && candidate.evidence.some((item) => item.source === "website" || item.source === "pdf" || item.source === "rss");
     const usableEmail = candidate.emails.some((email) => email.status !== "inferred" && email.deliverability !== "undeliverable");
-    return candidate.score >= minScore && (usableEmail || candidate.phones.length > 0 || personalSocial);
+    return candidate.score >= minScore && (usableEmail || candidate.phones.length > 0 || personalSocial || officialCompanyChannel);
   });
 
   if (includeGeneric && !selected.some((candidate) => candidate.emails.some((email) => email.generic))) {
@@ -204,6 +207,17 @@ export function selectCandidates(
         candidate.evidence.some((item) => item.source === "website"),
     );
     if (genericFallback) selected.push({ ...genericFallback, scoreReasons: [...genericFallback.scoreReasons, "fallback: официальный общий адрес"] });
+  }
+
+  if (selected.length === 0) {
+    const officialChannelFallback = scored.find(
+      (candidate) =>
+        candidate.socialUrls.length > 0 &&
+        candidate.evidence.some((item) => item.source === "website" || item.source === "pdf" || item.source === "rss"),
+    );
+    if (officialChannelFallback) {
+      selected.push({ ...officialChannelFallback, scoreReasons: [...officialChannelFallback.scoreReasons, "fallback: официальный канал компании"] });
+    }
   }
 
   return { scored, selected: uniqueBy(selected, (candidate) => candidateKeys(candidate)[0] ?? truncate(JSON.stringify(candidate), 300)).slice(0, maxContacts) };
