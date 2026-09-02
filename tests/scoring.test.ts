@@ -96,6 +96,18 @@ describe("candidate consolidation and scoring", () => {
     expect(merged[0]?.phones).toEqual(["+79990000000"]);
   });
 
+  it("keeps one official company channel when personal contacts are absent", () => {
+    const { selected } = selectCandidates([
+      candidate({
+        socialUrls: ["https://t.me/example_company"],
+        evidence: [{ source: "website", url: "https://example.com/contacts", title: "Contacts", snippet: "Официальный Telegram" }],
+      }),
+    ], ["директор по маркетингу"], 80, 5, true);
+    expect(selected).toHaveLength(1);
+    expect(selected[0]?.socialUrls).toEqual(["https://t.me/example_company"]);
+    expect(selected[0]?.scoreReasons).toContain("fallback: официальный канал компании");
+  });
+
   it("never selects an inferred-only email as a direct channel", () => {
     const { selected } = selectCandidates([
       candidate({ fullName: "Иван Петров", position: "CEO", emails: [{ value: "ivan@example.com", generic: false, deliverability: "unknown", status: "inferred" }], evidence: [{ source: "website", url: "https://example.com/team", title: "Team", snippet: "Иван Петров" }] }),

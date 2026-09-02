@@ -66,6 +66,8 @@ jobs:
       MANUAL_COMPANY_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.company_name || '' }}
       MANUAL_COMPANY_WEBSITE: ${{ github.event_name == 'workflow_dispatch' && inputs.company_website || '' }}
       MAX_COMPANIES: ${{ github.event_name == 'workflow_dispatch' && inputs.max_companies || vars.MAX_COMPANIES || '10' }}
+      RESEARCH_POOL_SIZE: ${{ vars.RESEARCH_POOL_SIZE || '250' }}
+      RESEARCH_COOLDOWN_DAYS: ${{ vars.RESEARCH_COOLDOWN_DAYS || '7' }}
       MAX_CONTACTS_PER_COMPANY: ${{ vars.MAX_CONTACTS_PER_COMPANY || '5' }}
       MAX_PAGES_PER_SITE: ${{ vars.MAX_PAGES_PER_SITE || '8' }}
       MIN_CONTACT_SCORE: ${{ vars.MIN_CONTACT_SCORE || '35' }}

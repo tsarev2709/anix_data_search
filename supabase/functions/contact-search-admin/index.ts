@@ -28,10 +28,39 @@ type GitHubRun = {
   html_url?: string;
   run_number?: number;
 };
+type TelegramUser = { id?: number; first_name?: string; last_name?: string; username?: string };
+type TelegramChat = { id: number; type?: string; title?: string; username?: string };
+type TelegramForwardOrigin = {
+  type?: string;
+  date?: number;
+  message_id?: number;
+  sender_user?: TelegramUser;
+  sender_user_name?: string;
+  chat?: TelegramChat;
+};
+type TelegramMessage = {
+  message_id: number;
+  date?: number;
+  text?: string;
+  caption?: string;
+  chat: TelegramChat;
+  from?: TelegramUser;
+  sender_chat?: TelegramChat;
+  forward_origin?: TelegramForwardOrigin;
+};
+type TelegramUpdate = {
+  update_id?: number;
+  message?: TelegramMessage;
+  edited_message?: TelegramMessage;
+  channel_post?: TelegramMessage;
+  edited_channel_post?: TelegramMessage;
+};
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const telegramWebhookSecret = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "";
+const telegramMonitorChatId = Deno.env.get("TELEGRAM_MONITOR_CHAT_ID") ?? "";
 const allowedOrigins = (Deno.env.get("DASHBOARD_ORIGINS") ?? "").split(",").map((item) => item.trim()).filter(Boolean);
 const adminEmails = new Set([
   "studio@anix-ai.pro",
@@ -42,7 +71,7 @@ function cors(request: Request): HeadersInit {
   const origin = request.headers.get("origin") ?? "";
   return {
     "access-control-allow-origin": allowedOrigins.includes(origin) ? origin : allowedOrigins[0] ?? "null",
-    "access-control-allow-headers": "authorization, x-client-info, apikey, content-type",
+    "access-control-allow-headers": "authorization, x-client-info, apikey, content-type, x-telegram-bot-api-secret-token",
     "access-control-allow-methods": "GET, POST, PATCH, OPTIONS",
     "access-control-expose-headers": "x-request-id",
     vary: "Origin",
@@ -147,6 +176,128 @@ async function workflowSnapshot(): Promise<Json> {
   };
 }
 
+
+function telegramUserName(user?: TelegramUser): string | null {
+  if (!user) return null;
+  const display = [user.first_name, user.last_name].filter(Boolean).join(" ").trim();
+  return user.username ? `${display || user.username} (@${user.username})` : display || null;
+}
+
+function telegramOrigin(message: TelegramMessage): { author: string | null; url: string } {
+  const origin = message.forward_origin;
+  const originChat = origin?.chat;
+  const author =
+    telegramUserName(origin?.sender_user) ??
+    origin?.sender_user_name ??
+    originChat?.title ??
+    (originChat?.username ? `@${originChat.username}` : null) ??
+    telegramUserName(message.from) ??
+    message.sender_chat?.title ??
+    null;
+  if (originChat?.username && origin.message_id) {
+    return { author, url: `https://t.me/${originChat.username}/${origin.message_id}` };
+  }
+  const directUrl = `${message.text ?? ""} ${message.caption ?? ""}`.match(/https?:\/\/[^\s<>"')]+/i)?.[0];
+  if (directUrl) return { author, url: directUrl.replace(/[.,;!?]+$/, "") };
+  const internalChat = String(message.chat.id).replace(/^-100/, "");
+  return { author, url: internalChat ? `https://t.me/c/${internalChat}/${message.message_id}` : "https://t.me" };
+}
+
+function telegramClassification(text: string): { category: string; intent: string; fit: string[] } {
+  const value = text.toLowerCase();
+  const categories: Array<[string, RegExp]> = [
+    ["обучающее видео", /обучающ|инструктаж|курс|онбординг|обучить|объясняющ/],
+    ["охрана труда и промышленность", /охран[аы] труда|техник[аи] безопасности|промышленн|производств|завод|инструкци/],
+    ["HR и бренд работодателя", /hr|эйчар|бренд работодател|ваканси|сотрудник|корпоративн.*культур/],
+    ["продуктовое и рекламное видео", /рекламн|продуктов|промо|презентац|имиджев|бренд.*ролик/],
+    ["анимация и инфографика", /анимац|моушн|motion|инфограф|3d|2d/],
+    ["съёмка события и трансляция", /трансляц|стрим|конференц|форум|мероприят|репортаж/],
+    ["фарма и медицина", /фарм|медицин|клиник|врач|пациент/],
+    ["видеопродакшн", /видео|ролик|съ[её]м|монтаж|продакшн|видеограф|оператор/],
+  ];
+  const fit = categories.filter(([, pattern]) => pattern.test(value)).map(([name]) => name);
+  let intent = "market_signal";
+  if (/тендер|закупк|котиров|коммерческ.*предлож|конкурс.*подряд/.test(value)) intent = "tender";
+  else if (/порекомендуйте|посоветуйте|кто.*делал|ищу рекомендац/.test(value)) intent = "recommendation";
+  else if (/ищем|ищу|нужен|нужна|нужны|требуется|подрядчик|исполнитель|агентств|студи[яю]|продакшн/.test(value)) intent = "vendor_search";
+  else if (/тз|техническ.*задан|бриф|смет|бюджет|срок|рассчитать/.test(value)) intent = "brief";
+  else if (/проблем|не понимаем|не знаем|не получается|надо объяснить|сложно обучить/.test(value)) intent = "problem";
+  return { category: fit[0] ?? "видеоконтент для бизнеса", intent, fit };
+}
+
+function extractTelegramContacts(text: string): { emails: string[]; phones: string[]; socialUrls: string[] } {
+  const emails = [...new Set((text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? []).map((value) => value.toLowerCase()))];
+  const phones = [...new Set((text.match(/(?:\+7|8)[\s()\-\d]{9,18}\d/g) ?? []).map((value) => value.replace(/[^+\d]/g, "")))];
+  const socialUrls = [...new Set(text.match(/https?:\/\/(?:t\.me|vk\.com|tenchat\.ru|linkedin\.com|threads\.net|youtube\.com|youtu\.be)\/[^\s<>"')]+/gi) ?? [])];
+  return { emails, phones, socialUrls };
+}
+
+async function sha256(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function ingestTelegramUpdate(
+  request: Request,
+  admin: ReturnType<typeof createClient>,
+  requestId: string,
+): Promise<Response> {
+  if (!telegramWebhookSecret) {
+    return response(request, 503, { error: "Telegram webhook не настроен", code: "telegram_not_configured", stage: "telegram_configuration" }, requestId);
+  }
+  if (request.headers.get("x-telegram-bot-api-secret-token") !== telegramWebhookSecret) {
+    return response(request, 401, { error: "Некорректный Telegram webhook secret", code: "telegram_secret_invalid", stage: "telegram_authorization" }, requestId);
+  }
+  const update = await request.json().catch(() => null) as TelegramUpdate | null;
+  const message = update?.message ?? update?.channel_post ?? update?.edited_message ?? update?.edited_channel_post;
+  const text = (message?.text ?? message?.caption ?? "").trim();
+  if (!message || !text) {
+    return response(request, 200, { ok: true, accepted: false, reason: "empty_or_unsupported_update" }, requestId);
+  }
+  if (telegramMonitorChatId && String(message.chat.id) !== telegramMonitorChatId) {
+    return response(request, 200, { ok: true, accepted: false, reason: "unexpected_chat" }, requestId);
+  }
+
+  const origin = telegramOrigin(message);
+  const classification = telegramClassification(text);
+  const contacts = extractTelegramContacts(text);
+  const publishedAt = message.forward_origin?.date ?? message.date;
+  const scoreReasons: string[] = ["+15 сигнал из TgNinja"];
+  let score = 15;
+  if (classification.fit.length > 0) { score += 20; scoreReasons.push("+20 соответствует услугам Anix"); }
+  if (["vendor_search", "recommendation", "brief"].includes(classification.intent)) { score += 35; scoreReasons.push("+35 явное намерение найти решение"); }
+  if (classification.intent === "tender") { score += 45; scoreReasons.push("+45 тендер или закупка"); }
+  if (contacts.emails.length > 0) { score += 15; scoreReasons.push("+15 указан email"); }
+  if (contacts.phones.length > 0) { score += 10; scoreReasons.push("+10 указан телефон"); }
+  const fingerprint = await sha256(`telegram_ninja|${origin.url}|${message.message_id}|${text.slice(0, 500)}`);
+  const { error } = await admin.from("demand_signals").upsert({
+    fingerprint,
+    last_run_id: null,
+    source: "telegram_ninja",
+    category: classification.category,
+    intent: classification.intent,
+    query: classification.fit.join(" · ") || "TgNinja monitoring",
+    title: text.replace(/\s+/g, " ").slice(0, 180),
+    url: origin.url,
+    snippet: text.slice(0, 4000),
+    author: origin.author,
+    published_at: publishedAt ? new Date(publishedAt * 1000).toISOString() : null,
+    last_seen_at: new Date().toISOString(),
+    score: Math.min(100, score),
+    score_reasons: scoreReasons,
+    emails: contacts.emails,
+    phones: contacts.phones,
+    social_urls: contacts.socialUrls,
+  }, { onConflict: "fingerprint" });
+  if (error) {
+    console.error("Telegram signal storage failed", { requestId, message: error.message });
+    return response(request, 500, { error: error.message, code: "telegram_storage_failed", stage: "telegram_storage" }, requestId);
+  }
+  console.log("Telegram signal accepted", { requestId, fingerprint, chatId: message.chat.id, score: Math.min(100, score) });
+  return response(request, 200, { ok: true, accepted: true, fingerprint, score: Math.min(100, score), source: "telegram_ninja" }, requestId);
+}
+
 async function authorize(request: Request): Promise<AuthorizationResult> {
   const token = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   if (!token) return { user: null, reason: "missing_token" };
@@ -175,6 +326,12 @@ Deno.serve(async (request) => {
   if (!supabaseUrl || !anonKey || !serviceRoleKey) {
     return response(request, 503, { error: "Supabase function secrets are incomplete", code: "supabase_secrets_incomplete", stage: "configuration" }, requestId);
   }
+  const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const pathname = new URL(request.url).pathname;
+  if (request.method === "POST" && pathname.endsWith("/telegram-webhook")) {
+    return ingestTelegramUpdate(request, admin, requestId);
+  }
+
   const authorization = await authorize(request);
   if (!authorization.user) {
     const wrongEmail = authorization.reason === "email_not_allowed" && authorization.email;
@@ -187,9 +344,6 @@ Deno.serve(async (request) => {
       stage: "authorization",
     }, requestId);
   }
-
-  const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  const pathname = new URL(request.url).pathname;
 
   if (request.method === "GET" && pathname.endsWith("/dashboard")) {
     const [runsResult, companiesResult, contactsResult, demandRunsResult, demandSignalsResult, workflow] = await Promise.all([
@@ -232,6 +386,7 @@ Deno.serve(async (request) => {
         github: Boolean(Deno.env.get("GITHUB_ACTIONS_TOKEN") && Deno.env.get("GITHUB_REPO")),
         supabase: true,
         auto_apply: Deno.env.get("AUTO_APPLY") === "true",
+        telegram_ninja: Boolean(telegramWebhookSecret),
       },
       diagnostics: {
         generated_at: new Date().toISOString(),

@@ -66,6 +66,9 @@ jobs:
       ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
       DASHBOARD_ORIGINS: ${{ secrets.DASHBOARD_ORIGINS }}
       DASHBOARD_GITHUB_TOKEN: ${{ secrets.DASHBOARD_GITHUB_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+      TELEGRAM_MONITOR_CHAT_ID: ${{ secrets.TELEGRAM_MONITOR_CHAT_ID }}
     steps:
       - uses: actions/checkout@v4
       - name: Check deployment configuration
@@ -97,6 +100,20 @@ jobs:
             GITHUB_REPO="tsarev2709/anix_data_search" \
             AMO_CONFIGURED="true" \
             AUTO_APPLY="false"
+          optional_secrets=()
+          [[ -n "$TELEGRAM_WEBHOOK_SECRET" ]] && optional_secrets+=(TELEGRAM_WEBHOOK_SECRET="$TELEGRAM_WEBHOOK_SECRET")
+          [[ -n "$TELEGRAM_MONITOR_CHAT_ID" ]] && optional_secrets+=(TELEGRAM_MONITOR_CHAT_ID="$TELEGRAM_MONITOR_CHAT_ID")
+          if (( ${#optional_secrets[@]} > 0 )); then
+            supabase secrets set --project-ref "$SUPABASE_PROJECT_ID" "${optional_secrets[@]}"
+          fi
       - name: Deploy authorization gateway
         if: steps.config.outputs.enabled == 'true'
         run: supabase functions deploy contact-search-admin --project-ref "$SUPABASE_PROJECT_ID"
+      - name: Configure Telegram webhook
+        if: steps.config.outputs.enabled == 'true' && env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_WEBHOOK_SECRET != ''
+        shell: bash
+        run: |
+          webhook_url="https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/contact-search-admin/telegram-webhook"
+          response=$(curl --fail-with-body --silent --show-error             --request POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook"             --data-urlencode "url=${webhook_url}"             --data-urlencode "secret_token=${TELEGRAM_WEBHOOK_SECRET}"             --data-urlencode 'allowed_updates=["message","edited_message","channel_post","edited_channel_post"]')
+          echo "$response" | jq -e '.ok == true' >/dev/null
+          echo "::notice::Telegram webhook configured"

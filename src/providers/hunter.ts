@@ -32,6 +32,8 @@ function mapStatus(status: string | undefined): Deliverability {
 }
 
 export class HunterProvider {
+  private disabledReason: string | null = null;
+
   constructor(
     private readonly apiKey: string,
     private readonly verifyEmails: boolean,
@@ -39,11 +41,20 @@ export class HunterProvider {
   ) {}
 
   async findByDomain(domain: string): Promise<ContactCandidate[]> {
+    if (this.disabledReason) return [];
     const url = new URL("https://api.hunter.io/v2/domain-search");
     url.searchParams.set("domain", domain);
     url.searchParams.set("limit", "20");
     url.searchParams.set("api_key", this.apiKey);
-    const response = await requestJson<HunterDomainResponse>(url, { method: "GET" }, this.http);
+    let response: HunterDomainResponse;
+    try {
+      response = await requestJson<HunterDomainResponse>(url, { method: "GET" }, this.http);
+    } catch (error) {
+      if (error instanceof HttpError && [400, 401, 402, 403, 429].includes(error.status)) {
+        this.disabledReason = `Hunter отключён до следующего запуска после фатального ответа: ${error.message}`;
+      }
+      throw error;
+    }
 
     const candidates: ContactCandidate[] = [];
     for (const item of response.data?.emails ?? []) {

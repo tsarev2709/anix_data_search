@@ -11,6 +11,7 @@ export type EvidenceSource =
   | "hacker_news"
   | "stack_exchange"
   | "youtube"
+  | "telegram_ninja"
   | "feed"
   | "social"
   | "gemini"
