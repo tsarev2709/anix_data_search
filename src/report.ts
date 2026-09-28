@@ -92,17 +92,19 @@ export async function writeReport(report: RunReport, directory = "reports"): Pro
 }
 
 export function renderDemandMarkdown(report: DemandMonitorReport): string {
+  const direct = report.signals.filter((signal) => signal.signalType === "direct_demand").length;
+  const triggers = report.signals.filter((signal) => signal.signalType === "account_trigger").length;
   const lines = [
     `# Мониторинг спроса — ${report.finishedAt.slice(0, 10)}`,
     "",
-    `Запуск: \`${report.runId}\` · запросов: ${report.queries.length} · сырых результатов: ${report.resultsCount} · сигналов: ${report.signals.length} · сбоев: ${report.failures.length}`,
+    `Запуск: \`${report.runId}\` · запросов: ${report.queries.length} · сырых результатов: ${report.resultsCount} · прямых лидов: ${direct} · триггеров: ${triggers} · отброшено: ${report.discardedCount} · сбоев: ${report.failures.length}`,
     `Провайдеры: ${Object.entries(report.providers).map(([provider, status]) => `${provider}=${status}`).join(", ")}.`,
     "",
-    "| Балл | Тип | Источник | Сигнал | Контакты |",
-    "|---:|---|---|---|---|",
+    "| Балл | Класс | Категория | Доказательство | Контакт | Следующее действие |",
+    "|---:|---|---|---|---|---|",
     ...report.signals.map((signal) => {
-      const contacts = [...signal.emails, ...signal.phones, ...signal.socialUrls].join("<br>") || "—";
-      return `| ${signal.score} | ${signal.intent} / ${signal.category} | ${signal.source} | [${escapeMarkdown(signal.title)}](${signal.url}) | ${escapeMarkdown(contacts)} |`;
+      const contacts = [...signal.emails, ...signal.phones, ...signal.socialUrls].join("<br>") || signal.contactability;
+      return `| ${signal.score} | ${signal.signalType} | ${signal.intent} / ${signal.category} | [${escapeMarkdown(signal.evidenceQuote)}](${signal.url}) | ${escapeMarkdown(contacts)} | ${escapeMarkdown(signal.nextAction)} |`;
     }),
     "",
   ];

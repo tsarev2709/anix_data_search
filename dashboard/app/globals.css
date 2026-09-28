@@ -354,3 +354,74 @@ a { color: inherit; text-decoration: none; }
 .reply-draft { margin: 0.9rem 0; padding: 0.9rem; border: 1px solid #d5dbea; border-radius: 12px; background: #f7f9ff; }
 .reply-draft p { white-space: pre-wrap; line-height: 1.5; }
 .reply-draft small { display: block; margin-top: 0.5rem; color: #586176; }
+
+
+/* Commercial demand radar */
+.demand-tabs {
+  flex-wrap: wrap;
+}
+
+.demand-card.direct_demand {
+  border-top: 3px solid var(--acid);
+}
+
+.demand-card.account_trigger {
+  border-top: 3px solid #d8a300;
+}
+
+.demand-card.market_intelligence {
+  opacity: 0.82;
+}
+
+.demand-evidence {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid #dfe5d7;
+  background: #f7f9f3;
+  color: #222820;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.demand-evidence strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #66705f;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.demand-next {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-left: 3px solid var(--acid);
+  background: #fbfff4;
+}
+
+.demand-next span,
+.demand-next small {
+  color: #6f776a;
+  font-size: 11px;
+}
+
+.demand-next strong {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+@media (max-width: 760px) {
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .demand-tabs {
+    width: 100%;
+  }
+
+  .demand-tabs button {
+    flex: 1 1 auto;
+  }
+}

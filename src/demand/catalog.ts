@@ -47,6 +47,15 @@ const ENGLISH_QUERIES: Array<[string, string, DemandIntent]> = [
   ["industrial", '"industrial process animation" vendor', "vendor_search"],
 ];
 
+const NEWS_TRIGGERS: DemandQuery[] = [
+  { id: "news-pharma-launch", query: "компания запускает новый препарат OR медицинское изделие", category: "pharma", intent: "market_signal", priority: 78, locale: "ru", channel: "news" },
+  { id: "news-pharma-tender", query: "фармацевтическая компания тендер видео OR анимация OR контент", category: "pharma", intent: "tender", priority: 86, locale: "ru", channel: "news" },
+  { id: "news-safety-training", query: "предприятие обновляет обучение охрана труда OR промышленная безопасность", category: "safety", intent: "market_signal", priority: 78, locale: "ru", channel: "news" },
+  { id: "news-corporate-learning", query: "компания запускает корпоративное обучение OR онбординг сотрудников", category: "learning", intent: "market_signal", priority: 74, locale: "ru", channel: "news" },
+  { id: "news-event-launch", query: "компания готовит конференцию OR выставку OR форум видеоконтент", category: "events", intent: "market_signal", priority: 72, locale: "ru", channel: "news" },
+  { id: "news-brand-launch", query: "компания запускает новый бренд OR ребрендинг коммуникационная кампания", category: "marketing", intent: "market_signal", priority: 72, locale: "ru", channel: "news" },
+];
+
 const SOCIAL_SITES = ["t.me", "vk.com", "tenchat.ru", "threads.net"];
 const FORUM_SITES = ["vc.ru", "habr.com", "pikabu.ru", "otvet.mail.ru", "reddit.com"];
 
@@ -92,6 +101,7 @@ export function buildDemandQueryCatalog(): DemandQuery[] {
   for (const [category, query, intent] of ENGLISH_QUERIES) {
     queries.push({ id: queryId([category, query]), query, category, intent, priority: 72, locale: "en", channel: "forum" });
   }
+  queries.push(...NEWS_TRIGGERS);
   return uniqueBy(queries, (item) => item.query.toLowerCase());
 }
 
@@ -116,6 +126,7 @@ export function selectDailyDemandQueries(date: Date, budget: number): DemandQuer
   add(catalog.filter((item) => item.priority >= 98 && item.channel === "web"), Math.min(8, budget), "core");
   add(catalog.filter((item) => item.channel === "social"), Math.min(8, Math.max(0, budget - selected.length)), "social");
   add(catalog.filter((item) => item.channel === "forum" && item.locale === "ru"), Math.min(6, Math.max(0, budget - selected.length)), "forum-ru");
+  add(catalog.filter((item) => item.channel === "news"), Math.min(6, Math.max(0, budget - selected.length)), "news-triggers");
   add(catalog.filter((item) => item.locale === "en"), Math.min(4, Math.max(0, budget - selected.length)), "english");
   add(catalog.filter((item) => !selectedIds.has(item.id)).sort((left, right) => right.priority - left.priority), budget - selected.length, "remaining");
   return selected;
