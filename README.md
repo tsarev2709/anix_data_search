@@ -6,6 +6,7 @@
 
 - забирает ограниченную порцию сделок из заданной воронки и этапа AmoCRM и автоматически ротирует их, не повторяя недавно исследованные;
 - каждый день мониторит чаты, форумы, соцсети, RSS и новости по расширенной карте запросов на услуги Anix;
+- открывает найденные публичные обсуждения VC, Habr, Reddit, Pikabu и Ответов Mail.ru, выделяет отдельные комментарии с автором, датой и ссылкой для ответа;
 - принимает перехваченные TgNinja сообщения через защищённый Telegram Bot API webhook и сразу показывает их в радаре спроса;
 - различает поиск подрядчика, рекомендацию, бриф, тендер, проблему и общий рыночный сигнал;
 - позволяет вручную указать название одной компании и собрать по ней сайт, документы, людей, контакты и публичные профили;
@@ -46,6 +47,7 @@
 | GitHub | нет | публичные профили, организации, bio, company, blog и public email |
 | Hacker News + Stack Exchange | нет | свежие англоязычные обсуждения и запросы |
 | Публичные RSS/Atom | нет | новые публикации Habr, VC, Reddit и подключённых пользователем источников |
+| Разбор обсуждений (Cheerio + Playwright) | нет | сообщения внутри найденных веток, в том числе на страницах с динамической загрузкой |
 | TgNinja + Telegram Bot API | bot token + webhook secret | новые сообщения из выбранных чатов и каналов сразу в панели «Спрос» |
 | YouTube Data API | опциональный key | свежие видео и каналы по карте спроса |
 | Gemini + Google Search | опциональный key | grounded web discovery; текущий API grounding не считается базовым бесплатным источником |
@@ -93,5 +95,6 @@ npm start
 - [Настройка GitHub и AmoCRM](docs/setup.md)
 - [Эксплуатация, скоринг и восстановление после ошибок](docs/operations.md)
 - [План подключения дополнительных API](docs/api-roadmap.md)
+- [Выбор парсеров и работа с обсуждениями](docs/parsing-sources.md)
 
 Использованные API: [AmoCRM сделки](https://www.amocrm.ru/developers/content/crm_platform/leads-api), [контакты](https://www.amocrm.ru/developers/content/crm_platform/contacts-api), [связи](https://www.amocrm.ru/developers/content/crm_platform/entity-links-api), [Hunter API v2](https://hunter.io/api-documentation/v2), [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search), [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
