@@ -343,41 +343,73 @@ Deno.serve(async (request) => {
     }, requestId);
   }
 
+  const runCompaniesMatch = pathname.match(/\/runs\/([^/]+)\/companies$/);
+  if (request.method === "GET" && runCompaniesMatch) {
+    const runId = decodeURIComponent(runCompaniesMatch[1]);
+    if (!runId || runId.length > 128) {
+      return response(request, 400, { error: "Некорректный идентификатор запуска", code: "invalid_run_id", stage: "validation" }, requestId);
+    }
+    const companiesResult = await admin
+      .from("contact_search_companies")
+      .select("id,run_id,source_lead_id,source_lead_name,source_company_id,company_name,source_website,website,company_context,research_trace,candidates,selected_candidates,actions,warnings,duration_ms,created_at")
+      .eq("run_id", runId)
+      .order("id", { ascending: true })
+      .limit(250);
+    if (companiesResult.error) {
+      console.error("Run company audit query failed", { requestId, runId, error: companiesResult.error.message });
+      return response(request, 500, {
+        error: companiesResult.error.message,
+        code: "run_companies_query_failed",
+        stage: "supabase_read",
+      }, requestId);
+    }
+    return response(request, 200, { companies: companiesResult.data ?? [] }, requestId);
+  }
+
   if (request.method === "GET" && pathname.endsWith("/dashboard")) {
-    const [runsResult, companiesResult, contactsResult, demandRunsResult, demandSignalsResult, workflow] = await Promise.all([
-      admin.from("contact_search_runs").select("*").order("started_at", { ascending: false }).limit(50),
+    const [runsResult, contactsResult, demandRunsResult, demandSignalsResult, workflow] = await Promise.all([
       admin
-        .from("contact_search_companies")
-        .select("id,run_id,source_lead_id,source_lead_name,source_company_id,company_name,source_website,website,company_context,research_trace,candidates,selected_candidates,actions,warnings,duration_ms,created_at")
-        .order("created_at", { ascending: false })
-        .limit(500),
+        .from("contact_search_runs")
+        .select("id,started_at,finished_at,mode,status,companies_count,candidates_count,selected_count,failures_count,metrics")
+        .order("started_at", { ascending: false })
+        .limit(30),
       admin
         .from("contact_search_candidates")
         .select("id,company_name,source_lead_id,full_name,position,emails,phones,social_urls,score,score_reasons,evidence,decision,synced_at,created_at")
         .order("created_at", { ascending: false })
-        .limit(200),
-      admin.from("demand_monitor_runs").select("*").order("started_at", { ascending: false }).limit(30),
+        .limit(150),
+      admin
+        .from("demand_monitor_runs")
+        .select("id,started_at,finished_at,status,queries_count,results_count,signals_count,failures_count,providers")
+        .order("started_at", { ascending: false })
+        .limit(20),
       admin
         .from("demand_signals")
         .select("id,fingerprint,last_run_id,source,category,intent,query,title,url,snippet,author,published_at,first_seen_at,last_seen_at,score,score_reasons,emails,phones,social_urls,status,reply_draft,contact_url,alert_status,alert_sent_at,alert_error")
         .order("last_seen_at", { ascending: false })
         .order("score", { ascending: false })
-        .limit(300),
+        .limit(200),
       workflowSnapshot(),
     ]);
-    if (runsResult.error || companiesResult.error || contactsResult.error || demandRunsResult.error || demandSignalsResult.error) {
-      return response(request, 500, {
-        error: runsResult.error?.message ?? companiesResult.error?.message ?? contactsResult.error?.message ?? demandRunsResult.error?.message ?? demandSignalsResult.error?.message ?? "Query failed",
-        code: "dashboard_storage_query_failed",
-        stage: "supabase_read",
-      }, requestId);
-    }
+
+    const storage = {
+      runs: runsResult.error ? `error: ${runsResult.error.message}` : "ok",
+      companies: "lazy",
+      contacts: contactsResult.error ? `error: ${contactsResult.error.message}` : "ok",
+      demand_runs: demandRunsResult.error ? `error: ${demandRunsResult.error.message}` : "ok",
+      demand_signals: demandSignalsResult.error ? `error: ${demandSignalsResult.error.message}` : "ok",
+    };
+    const storageErrors = Object.entries(storage)
+      .filter(([, value]) => value.startsWith("error:"))
+      .map(([section, value]) => ({ section, message: value.slice(7) }));
+    if (storageErrors.length > 0) console.error("Partial dashboard storage failure", { requestId, storageErrors });
+
     return response(request, 200, {
-      runs: runsResult.data,
-      companies: companiesResult.data,
-      contacts: contactsResult.data,
-      demand_runs: demandRunsResult.data,
-      demand_signals: demandSignalsResult.data,
+      runs: runsResult.data ?? [],
+      companies: [],
+      contacts: contactsResult.data ?? [],
+      demand_runs: demandRunsResult.data ?? [],
+      demand_signals: demandSignalsResult.data ?? [],
       workflow,
       status: {
         amo: Boolean(Deno.env.get("AMO_CONFIGURED")),
@@ -389,7 +421,8 @@ Deno.serve(async (request) => {
       },
       diagnostics: {
         generated_at: new Date().toISOString(),
-        storage: { runs: "ok", companies: "ok", contacts: "ok", demand_runs: "ok", demand_signals: "ok" },
+        storage,
+        storage_errors: storageErrors,
         workflow: (workflow as { available?: boolean }).available ? "ok" : "unavailable",
       },
     }, requestId);
