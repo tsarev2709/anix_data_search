@@ -93,7 +93,6 @@ export class SearxngProvider implements SearchProvider {
       }
     }
 
-    warnings.push(`SearXNG: запрос не выполнен: ${query}`);
     return { results: [], warnings, succeeded: false };
   }
 
@@ -105,12 +104,24 @@ export class SearxngProvider implements SearchProvider {
     const sent = queries.slice(0, budget);
 
     // Small batches keep the run reasonably fast without flooding community instances.
+    // If a full batch cannot reach any public instance, stop hammering the same
+    // unavailable hosts and let the other demand providers finish the run.
     for (let index = 0; index < sent.length; index += 3) {
-      const batch = await Promise.all(sent.slice(index, index + 3).map((query) => this.searchOne(query)));
+      const batchQueries = sent.slice(index, index + 3);
+      const batch = await Promise.all(batchQueries.map((query) => this.searchOne(query)));
+      let batchSuccesses = 0;
       for (const outcome of batch) {
         results.push(...outcome.results);
         warnings.push(...outcome.warnings);
-        if (outcome.succeeded) successfulQueries += 1;
+        if (outcome.succeeded) {
+          successfulQueries += 1;
+          batchSuccesses += 1;
+        }
+      }
+      if (batchSuccesses === 0) {
+        const skipped = Math.max(0, sent.length - index - batchQueries.length);
+        warnings.push(`SearXNG: публичные инстансы недоступны; ${skipped} оставшихся запросов переданы другим провайдерам`);
+        break;
       }
     }
 
@@ -120,7 +131,7 @@ export class SearxngProvider implements SearchProvider {
       status: successfulQueries > 0 ? "used" : "failed",
       queries: sent,
       results: uniqueBy(results, (item) => item.url),
-      warnings,
+      warnings: uniqueBy(warnings, (item) => item),
     };
   }
 
