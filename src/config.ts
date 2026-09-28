@@ -54,6 +54,7 @@ const schema = z
     DEMAND_QUERY_BUDGET: z.coerce.number().int().min(5).max(120).default(36),
     DEMAND_MAX_SIGNALS: z.coerce.number().int().min(10).max(500).default(120),
     DEMAND_FEEDS: z.string().optional(),
+    DEMAND_DISCUSSION_PAGES: z.coerce.number().int().min(0).max(30).default(12),
     SUPABASE_URL: z.string().url().optional(),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
     HTTP_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
@@ -152,6 +153,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       queryBudget: parsed.DEMAND_QUERY_BUDGET,
       maxSignals: parsed.DEMAND_MAX_SIGNALS,
       feeds: parsed.DEMAND_FEEDS?.split(",").map((value) => value.trim()).filter(Boolean) ?? [],
+      discussionPages: parsed.DEMAND_DISCUSSION_PAGES,
     },
     storage:
       parsed.SUPABASE_URL && parsed.SUPABASE_SERVICE_ROLE_KEY

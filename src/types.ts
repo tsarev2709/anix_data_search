@@ -13,6 +13,7 @@ export type EvidenceSource =
   | "youtube"
   | "telegram_ninja"
   | "feed"
+  | "discussion"
   | "social"
   | "gemini"
   | "search"

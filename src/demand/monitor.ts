@@ -2,6 +2,7 @@ import type { Config } from "../config.js";
 import type { DemandMonitorReport, DemandQuery, ProviderRunStatus, SearchResult } from "../types.js";
 import { uniqueBy } from "../utils.js";
 import { FeedDemandProvider } from "../providers/feed-demand.js";
+import { DiscussionDemandProvider } from "../providers/discussion-demand.js";
 import { GdeltProvider } from "../providers/gdelt.js";
 import { GoogleNewsProvider } from "../providers/google-news.js";
 import { HackerNewsDemandProvider } from "../providers/hacker-news.js";
@@ -43,7 +44,10 @@ export async function monitorDemand(config: Config, runId: string): Promise<Dema
     new FeedDemandProvider(config.http, config.demand.feeds).searchDemand(),
     ...(config.providers.youtubeApiKey ? [new YouTubeDemandProvider(config.providers.youtubeApiKey, config.http).searchDemand(webQueries)] : []),
   ];
-  const outcomes = await Promise.all(providers);
+  const initial = await Promise.all(providers);
+  const discussion = await new DiscussionDemandProvider(config.http, config.demand.discussionPages)
+    .searchDemand(initial.flatMap((outcome) => outcome.results));
+  const outcomes = [...initial, discussion];
   const providerStatuses: Record<string, ProviderRunStatus> = Object.fromEntries(outcomes.map((outcome) => [outcome.provider, outcome.status]));
   if (!config.providers.youtubeApiKey) providerStatuses.youtube = "disabled";
   const failures = outcomes.flatMap((outcome) => {

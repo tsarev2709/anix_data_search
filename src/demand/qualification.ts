@@ -81,6 +81,7 @@ const FIT_CATEGORIES: Array<{ category: string; matches: Array<{ label: string; 
 const REPLY_HOSTS = new Set([
   "t.me", "telegram.me", "vk.com", "vk.ru", "tenchat.ru", "threads.net",
   "reddit.com", "www.reddit.com", "news.ycombinator.com", "stackoverflow.com",
+  "vc.ru", "habr.com", "pikabu.ru", "otvet.mail.ru",
 ]);
 
 function plainText(value: string): string {
@@ -150,7 +151,8 @@ export function scoreDemandResult(result: SearchResult, query: DemandQuery): Dem
   const negatives = NEGATIVE_RULES.filter((rule) => rule.pattern.test(haystack)).map((rule) => rule.label);
   const strong = STRONG_TERMS.filter((term) => haystack.includes(term));
   const days = ageDays(result.publishedAt);
-  const freshEnough = days === null || days <= 45;
+  // An undated scraped comment could be years old; only dated comments enter the sales queue.
+  const freshEnough = (result.provider === "discussion" ? days !== null : true) && (days === null || days <= 45);
 
   const emails = unique((original.match(EMAIL_PATTERN) ?? []).map(normalizeEmail))
     .filter((value) => !isGenericEmail(value) || /^(?:info|contact|sales)@/.test(value));

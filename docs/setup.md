@@ -81,6 +81,7 @@ Repository → Settings → Secrets and variables → Actions → **Secrets**:
 | `DEMAND_QUERY_BUDGET` | `36` | сколько запросов из расширенного каталога выполнять за день |
 | `DEMAND_MAX_SIGNALS` | `120` | максимум новых сигналов в отчёте |
 | `DEMAND_FEEDS` | пусто | дополнительные RSS/Atom URL через запятую |
+| `DEMAND_DISCUSSION_PAGES` | `12` | максимум публичных обсуждений для разбора за запуск; `0` отключает этап |
 | `OPENAI_MODEL` | `gpt-5.6-luna` | модель извлечения |
 | `AUTO_APPLY` | `false` | главный предохранитель записи |
 | `SUPABASE_PROJECT_ID` | project ref | используется workflow деплоя |
