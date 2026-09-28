@@ -209,6 +209,8 @@ export interface CrawledPage {
 
 export type DemandIntent = "vendor_search" | "brief" | "tender" | "recommendation" | "problem" | "market_signal";
 export type DemandSignalStatus = "new" | "qualified" | "dismissed";
+export type DemandSignalType = "direct_demand" | "account_trigger" | "market_intelligence";
+export type DemandContactability = "direct" | "source_reply" | "company_research" | "none";
 
 export interface DemandQuery {
   id: string;
@@ -238,6 +240,11 @@ export interface DemandSignal {
   phones: string[];
   socialUrls: string[];
   status: DemandSignalStatus;
+  signalType: DemandSignalType;
+  leadGatePassed: boolean;
+  evidenceQuote: string;
+  contactability: DemandContactability;
+  nextAction: string;
 }
 
 export interface DemandMonitorReport {
@@ -249,4 +256,5 @@ export interface DemandMonitorReport {
   providers: Record<string, ProviderRunStatus>;
   failures: Array<{ provider: string; message: string }>;
   resultsCount: number;
+  discardedCount: number;
 }

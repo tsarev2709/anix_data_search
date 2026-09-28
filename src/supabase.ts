@@ -175,6 +175,11 @@ export class SupabaseRepository {
         emails: signal.emails,
         phones: signal.phones,
         social_urls: signal.socialUrls,
+        signal_type: signal.signalType,
+        lead_gate_passed: signal.leadGatePassed,
+        evidence_quote: signal.evidenceQuote,
+        contactability: signal.contactability,
+        next_action: signal.nextAction,
       }))),
     });
   }

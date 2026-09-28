@@ -29,6 +29,7 @@ describe("demand query catalog", () => {
     expect(selected.some((item) => item.channel === "social")).toBe(true);
     expect(selected.some((item) => item.channel === "forum")).toBe(true);
     expect(selected.some((item) => item.locale === "en")).toBe(true);
+    expect(selected.some((item) => item.channel === "news")).toBe(true);
     expect(selectDailyDemandQueries(new Date("2026-08-21T12:00:00Z"), 36)).toEqual(selected);
   });
 });
@@ -53,4 +54,51 @@ describe("demand scoring", () => {
     const signal = scoreDemandResult({ title: "Ищу работу", url: "https://example.com/job", content: "Ищу работу аниматором, нужен бесплатный курс и tutorial", provider: "feed" }, query);
     expect(signal.score).toBeLessThan(25);
   });
+  it("does not inherit tender or service intent from the search query", () => {
+    const signal = scoreDemandResult({
+      title: "Централизованные хранилища скиллов",
+      url: "https://habr.com/ru/articles/123/",
+      content: "Команды используют AI-агентов и хранят инструкции в репозитории. Статья объясняет архитектуру системы.",
+      provider: "feed",
+      query: '"тендер" "создать маскота бренда"',
+      publishedAt: new Date().toISOString(),
+    }, { ...query, category: "mascot", intent: "tender" });
+    expect(signal.signalType).toBe("market_intelligence");
+    expect(signal.leadGatePassed).toBe(false);
+    expect(signal.score).toBeLessThan(25);
+  });
+
+  it("derives category and intent from the publication itself", () => {
+    const signal = scoreDemandResult({
+      title: "Ищем подрядчика на видео по промышленной безопасности",
+      url: "https://vc.ru/marketing/123",
+      content: "Нужно создать серию обучающих роликов по охране труда. Есть бюджет, ТЗ и срок до ноября.",
+      provider: "feed",
+      query: '"тендер" "создать маскота бренда"',
+      publishedAt: new Date().toISOString(),
+      author: "Руководитель ОТ",
+    }, { ...query, category: "mascot", intent: "tender" });
+    expect(signal.signalType).toBe("direct_demand");
+    expect(signal.leadGatePassed).toBe(true);
+    expect(signal.category).toBe("safety");
+    expect(signal.intent).toBe("vendor_search");
+    expect(signal.evidenceQuote.toLowerCase()).toContain("подрядчика");
+  });
+
+  it("separates a company trigger from a direct request", () => {
+    const signal = scoreDemandResult({
+      title: "Фармкомпания выводит на рынок новый препарат",
+      url: "https://example.ru/news/launch",
+      content: "Компания готовит запуск препарата и коммуникационную кампанию для врачей.",
+      provider: "google_news",
+      publishedAt: new Date().toISOString(),
+      author: "Компания",
+    }, { ...query, category: "pharma", intent: "market_signal", channel: "news" });
+    expect(signal.signalType).toBe("account_trigger");
+    expect(signal.leadGatePassed).toBe(false);
+    expect(signal.category).toBe("pharma");
+    expect(signal.score).toBeGreaterThanOrEqual(50);
+    expect(signal.nextAction).toContain("ЛПР");
+  });
+
 });

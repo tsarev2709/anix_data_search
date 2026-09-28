@@ -251,6 +251,14 @@ async function ingestTelegramUpdate(
     reply_draft: classification.replyDraft,
     contact_url: origin.contactUrl,
     alert_status: alertEligible ? "pending" : "not_required",
+    signal_type: classification.eligible ? "direct_demand" : "market_intelligence",
+    lead_gate_passed: classification.eligible && fresh,
+    evidence_quote: text.replace(/\s+/g, " ").slice(0, 500),
+    contactability: contacts.emails.length > 0 || contacts.phones.length > 0
+      ? "direct" : origin.contactUrl || contacts.socialUrls.length > 0 ? "source_reply" : "company_research",
+    next_action: classification.eligible
+      ? "Ответить автору сегодня, сославшись на конкретную задачу"
+      : "Не передавать в продажи; использовать только как рыночный контекст",
   }, { onConflict: "fingerprint", ignoreDuplicates: true }).select("id");
   if (error) {
     console.error("Telegram signal storage failed", { requestId, message: error.message });
@@ -367,7 +375,7 @@ Deno.serve(async (request) => {
   }
 
   if (request.method === "GET" && pathname.endsWith("/dashboard")) {
-    const [runsResult, contactsResult, demandRunsResult, demandSignalsResult, workflow] = await Promise.all([
+    const [runsResult, contactsResult, demandRunsResult, demandSignalsResult, demandLeadCountResult, demandTriggerCountResult, workflow] = await Promise.all([
       admin
         .from("contact_search_runs")
         .select("id,started_at,finished_at,mode,status,companies_count,candidates_count,selected_count,failures_count,metrics")
@@ -385,10 +393,22 @@ Deno.serve(async (request) => {
         .limit(20),
       admin
         .from("demand_signals")
-        .select("id,fingerprint,last_run_id,source,category,intent,query,title,url,snippet,author,published_at,first_seen_at,last_seen_at,score,score_reasons,emails,phones,social_urls,status,reply_draft,contact_url,alert_status,alert_sent_at,alert_error")
-        .order("last_seen_at", { ascending: false })
+        .select("id,fingerprint,last_run_id,source,category,intent,query,title,url,snippet,author,published_at,first_seen_at,last_seen_at,score,score_reasons,emails,phones,social_urls,status,reply_draft,contact_url,alert_status,alert_sent_at,alert_error,signal_type,lead_gate_passed,evidence_quote,contactability,next_action")
+        .order("lead_gate_passed", { ascending: false })
+        .order("signal_type", { ascending: true })
         .order("score", { ascending: false })
-        .limit(200),
+        .order("last_seen_at", { ascending: false })
+        .limit(100),
+      admin
+        .from("demand_signals")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "new")
+        .eq("lead_gate_passed", true),
+      admin
+        .from("demand_signals")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "new")
+        .eq("signal_type", "account_trigger"),
       workflowSnapshot(),
     ]);
 
@@ -398,6 +418,8 @@ Deno.serve(async (request) => {
       contacts: contactsResult.error ? `error: ${contactsResult.error.message}` : "ok",
       demand_runs: demandRunsResult.error ? `error: ${demandRunsResult.error.message}` : "ok",
       demand_signals: demandSignalsResult.error ? `error: ${demandSignalsResult.error.message}` : "ok",
+      demand_counts: demandLeadCountResult.error || demandTriggerCountResult.error
+        ? `error: ${demandLeadCountResult.error?.message ?? demandTriggerCountResult.error?.message}` : "ok",
     };
     const storageErrors = Object.entries(storage)
       .filter(([, value]) => value.startsWith("error:"))
@@ -410,6 +432,10 @@ Deno.serve(async (request) => {
       contacts: contactsResult.data ?? [],
       demand_runs: demandRunsResult.data ?? [],
       demand_signals: demandSignalsResult.data ?? [],
+      demand_counts: {
+        leads: demandLeadCountResult.count ?? 0,
+        triggers: demandTriggerCountResult.count ?? 0,
+      },
       workflow,
       status: {
         amo: Boolean(Deno.env.get("AMO_CONFIGURED")),
