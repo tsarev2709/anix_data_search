@@ -69,6 +69,7 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
       TELEGRAM_MONITOR_CHAT_ID: ${{ secrets.TELEGRAM_MONITOR_CHAT_ID }}
+      TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
     steps:
       - uses: actions/checkout@v4
       - name: Check deployment configuration
@@ -103,6 +104,8 @@ jobs:
           optional_secrets=()
           [[ -n "$TELEGRAM_WEBHOOK_SECRET" ]] && optional_secrets+=(TELEGRAM_WEBHOOK_SECRET="$TELEGRAM_WEBHOOK_SECRET")
           [[ -n "$TELEGRAM_MONITOR_CHAT_ID" ]] && optional_secrets+=(TELEGRAM_MONITOR_CHAT_ID="$TELEGRAM_MONITOR_CHAT_ID")
+          [[ -n "$TELEGRAM_ALERT_CHAT_ID" ]] && optional_secrets+=(TELEGRAM_ALERT_CHAT_ID="$TELEGRAM_ALERT_CHAT_ID")
+          [[ -n "$TELEGRAM_BOT_TOKEN" ]] && optional_secrets+=(TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN")
           if (( ${#optional_secrets[@]} > 0 )); then
             supabase secrets set --project-ref "$SUPABASE_PROJECT_ID" "${optional_secrets[@]}"
           fi
