@@ -2,6 +2,7 @@ import type { Config } from "./config.js";
 import type { CompanyContext, ContactCandidate } from "./types.js";
 import { requestJson, type HttpOptions } from "./http.js";
 import { normalizeEmail, normalizePhone, normalizeUrl, truncate } from "./utils.js";
+import { validInn } from "./procurement/identity.js";
 
 interface AmoFieldValue {
   field_id: number;
@@ -65,6 +66,13 @@ export function companyNameFromLead(lead: Pick<AmoLead, "custom_fields_values">,
   return fieldValues(lead, (field) => field.field_id === configuredFieldId)[0] ?? null;
 }
 
+export function companyInnFromFields(entity: { custom_fields_values?: AmoFieldValue[] | null }, configuredFieldId?: number): string | null {
+  const values = fieldValues(entity, (field) => configuredFieldId !== undefined
+    ? field.field_id === configuredFieldId
+    : /^(инн|inn|инн компании)$/i.test(field.field_name?.trim() ?? ""));
+  return values.map(validInn).find((value): value is string => value !== null) ?? null;
+}
+
 export class AmoCRMClient {
   private readonly http: HttpOptions;
 
@@ -126,6 +134,8 @@ export class AmoCRMClient {
           companyId: company?.id ?? companyLink?.id ?? null,
           companyName: company?.name || companyLink?.name || fallbackCompanyName || lead.name,
           website: company ? websiteFromCompany(company, this.config.companyWebsiteFieldId) : null,
+          inn: (company ? companyInnFromFields(company, this.config.companyInnFieldId) : null)
+            ?? companyInnFromFields(lead, this.config.companyInnFieldId),
           linkedContactIds: (lead._embedded?.contacts ?? []).map((contact) => contact.id),
           source: "amo" as const,
         };

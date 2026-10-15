@@ -74,6 +74,7 @@ export interface ContactCandidate {
 }
 
 export interface CompanyContext {
+  inn?: string | null;
   sourceLeadId: number;
   sourceLeadName: string;
   pipelineId: number;
@@ -100,6 +101,7 @@ export interface CompanyResearchResult {
 export type ProviderRunStatus = "used" | "disabled" | "skipped" | "failed";
 
 export interface ResearchTrace {
+  procurement?: import("./procurement/types.js").ProcurementResearch;
   searchQueries: string[];
   searchResults: SearchResult[];
   crawledPages: Array<{

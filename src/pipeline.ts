@@ -13,6 +13,8 @@ import { chooseLikelyOfficialWebsite, searchEvidence } from "./providers/search.
 import { pageEvidence, WebsiteCrawler } from "./providers/website.js";
 import { SocialProfileEnricher } from "./providers/social-enrichment.js";
 import { syncCandidates } from "./sync.js";
+import { researchProcurement } from "./procurement/research.js";
+import { officialCompanyInn, validInn } from "./procurement/identity.js";
 
 export interface PipelineDependencies {
   amo: AmoCRMClient;
@@ -65,6 +67,7 @@ export async function researchCompany(
   runId: string,
 ): Promise<CompanyResearchResult> {
   const startedAt = Date.now();
+  let officialInn: { inn: string; sourceUrl: string } | null = null;
   const warnings: string[] = [];
   const candidates: ContactCandidate[] = [];
   const evidence: Evidence[] = [];
@@ -109,6 +112,7 @@ export async function researchCompany(
   if (discoveredWebsite) {
     try {
       const crawled = await dependencies.crawler.crawl(discoveredWebsite, archivedUrls);
+      if (!validInn(company.inn)) officialInn = officialCompanyInn(crawled.pages.filter((page) => domainFromUrl(page.url) === domain), company.companyName);
       providers.website = "used";
       crawlDiagnostics = crawled.diagnostics;
       warnings.push(...crawled.warnings);
@@ -125,6 +129,7 @@ export async function researchCompany(
     warnings.push("Официальный сайт не найден после CRM и бесплатного web discovery");
   }
 
+  const procurementPromise = researchProcurement(officialInn ? { ...company, inn: officialInn.inn } : company, dependencies.search, config.http, config.procurement);
   candidates.push(...candidatesFromEvidence(evidence));
   candidates.push(...extractPeopleFromEvidence(evidence, config.run.targetRoles));
   candidates.push(...socialCandidates(evidence, company.companyName));
@@ -221,6 +226,8 @@ export async function researchCompany(
     ? [{ type: "skip" as const, status: "planned" as const, detail: "Ручной поиск: запись в AmoCRM отключена" }]
     : await syncCandidates(dependencies.amo, config, company, selected, runId);
   const socialProfiles = extractSocialProfiles(evidence, company.companyName);
+  const procurement = await procurementPromise;
+  procurement.innSource = officialInn?.sourceUrl ?? (validInn(company.inn) ? company.source === "amo" ? "amoCRM" : "manual" : null);
 
   return {
     company,
@@ -228,6 +235,7 @@ export async function researchCompany(
     candidates: scored,
     selectedCandidates: selected,
     research: {
+      procurement,
       searchQueries: [...new Set(searchQueries)],
       searchResults: uniqueBy(results, (result) => result.url),
       crawledPages,

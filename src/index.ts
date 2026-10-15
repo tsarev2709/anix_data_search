@@ -108,6 +108,7 @@ async function main(): Promise<void> {
         responsibleUserId: null,
         companyId: null,
         companyName: config.run.manualCompanyName!,
+        inn: config.run.manualCompanyInn ?? null,
         website: config.run.manualCompanyWebsite ?? null,
         linkedContactIds: [],
         source: "manual" as const,

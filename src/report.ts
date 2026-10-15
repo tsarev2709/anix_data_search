@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ContactCandidate, DemandMonitorReport, RunReport } from "./types.js";
 import { escapeMarkdown, safeFilenameDate } from "./utils.js";
+import { renderProcurementMarkdown } from "./procurement/report.js";
 
 function candidateName(candidate: ContactCandidate): string {
   return candidate.fullName || candidate.emails[0]?.value || candidate.phones[0] || candidate.socialUrls[0] || "—";
@@ -71,6 +72,7 @@ export function renderMarkdown(report: RunReport): string {
     if (result.warnings.length > 0) {
       lines.push("Предупреждения:", "", ...result.warnings.map((item) => `- ${item}`), "");
     }
+    if (result.research.procurement) lines.push(...renderProcurementMarkdown(result.research.procurement));
     if (result.actions.length > 0) {
       lines.push("Действия:", "", ...result.actions.map((action) => `- ${action.status}: ${action.type} — ${action.detail}`), "");
     }
