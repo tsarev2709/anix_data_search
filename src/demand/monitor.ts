@@ -11,6 +11,9 @@ import { StackExchangeDemandProvider } from "../providers/stack-exchange.js";
 import { YouTubeDemandProvider } from "../providers/youtube.js";
 import { selectDailyDemandQueries } from "./catalog.js";
 import { scoreDemandResult } from "./qualification.js";
+import { TavilySearch } from "../providers/search.js";
+import { searchDemandWeb } from "../providers/demand-web-search.js";
+import { demandCoverage } from "./coverage.js";
 
 export { scoreDemandResult } from "./qualification.js";
 
@@ -36,7 +39,9 @@ export async function monitorDemand(config: Config, runId: string): Promise<Dema
   const newsQueries = queries.filter((item) => item.channel === "news" && item.locale === "ru").map((item) => item.query);
   const englishQueries = queries.filter((item) => item.locale === "en").map((item) => item.query);
   const providers = [
-    new SearxngProvider(config.http, config.providers.searxngInstances).searchDemand(webQueries),
+    searchDemandWeb(webQueries, new SearxngProvider(config.http, config.providers.searxngInstances),
+      config.providers.tavilyApiKey ? new TavilySearch(config.providers.tavilyApiKey, config.http) : undefined,
+      config.demand.tavilyQueryBudget),
     new GoogleNewsProvider(config.http).searchDemand(newsQueries),
     new GdeltProvider(config.http).searchDemand(newsQueries),
     new HackerNewsDemandProvider(config.http).searchDemand(englishQueries),
@@ -44,12 +49,13 @@ export async function monitorDemand(config: Config, runId: string): Promise<Dema
     new FeedDemandProvider(config.http, config.demand.feeds).searchDemand(),
     ...(config.providers.youtubeApiKey ? [new YouTubeDemandProvider(config.providers.youtubeApiKey, config.http).searchDemand(webQueries)] : []),
   ];
-  const initial = await Promise.all(providers);
+  const initial = (await Promise.all(providers)).flat();
   const discussion = await new DiscussionDemandProvider(config.http, config.demand.discussionPages)
     .searchDemand(initial.flatMap((outcome) => outcome.results));
   const outcomes = [...initial, discussion];
   const providerStatuses: Record<string, ProviderRunStatus> = Object.fromEntries(outcomes.map((outcome) => [outcome.provider, outcome.status]));
   if (!config.providers.youtubeApiKey) providerStatuses.youtube = "disabled";
+  if (!providerStatuses.tavily) providerStatuses.tavily = config.providers.tavilyApiKey && config.demand.tavilyQueryBudget > 0 ? "skipped" : "disabled";
   const failures = outcomes.flatMap((outcome) => {
     if (outcome.warnings.length > 0) return outcome.warnings.map((message) => ({ provider: outcome.provider, message }));
     return outcome.status === "failed" ? [{ provider: outcome.provider, message: "provider failed" }] : [];
@@ -83,5 +89,6 @@ export async function monitorDemand(config: Config, runId: string): Promise<Dema
     failures,
     resultsCount: rawResults.length,
     discardedCount: Math.max(0, scored.length - signals.length),
+    coverage: demandCoverage(queries, outcomes),
   };
 }

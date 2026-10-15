@@ -78,7 +78,7 @@ async function main(): Promise<void> {
     socialEnricher: new SocialProfileEnricher(config.http),
     commonCrawl: new CommonCrawlProvider(config.http),
     search: new MultiSearchProvider([
-      new SearxngProvider(config.http, config.providers.searxngInstances),
+      new SearxngProvider(config.http, config.providers.searxngInstances, { company: config.providers.companyQueryBudget, person: config.providers.personQueryBudget }),
       new GoogleNewsProvider(config.http),
       new GdeltProvider(config.http),
       new GitHubDiscoveryProvider(config.http, config.providers.githubToken),

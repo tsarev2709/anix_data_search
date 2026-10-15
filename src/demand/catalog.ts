@@ -1,5 +1,6 @@
 import type { DemandIntent, DemandQuery } from "../types.js";
 import { uniqueBy } from "../utils.js";
+import { diverseSearchSites, rotate, utcDay } from "../providers/source-catalog.js";
 
 const RUSSIAN_INTENTS: Array<{ phrase: string; intent: DemandIntent; priority: number }> = [
   { phrase: "ищем подрядчика", intent: "vendor_search", priority: 100 },
@@ -56,9 +57,6 @@ const NEWS_TRIGGERS: DemandQuery[] = [
   { id: "news-brand-launch", query: "компания запускает новый бренд OR ребрендинг коммуникационная кампания", category: "marketing", intent: "market_signal", priority: 72, locale: "ru", channel: "news" },
 ];
 
-const SOCIAL_SITES = ["t.me", "vk.com", "tenchat.ru", "threads.net"];
-const FORUM_SITES = ["vc.ru", "habr.com", "pikabu.ru", "otvet.mail.ru", "reddit.com"];
-
 function queryId(parts: string[]): string {
   return parts.join("-").toLowerCase().replace(/[^a-zа-яё0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 120);
 }
@@ -78,24 +76,18 @@ export function buildDemandQueryCatalog(): DemandQuery[] {
           channel: "web",
         });
       }
-      queries.push({
-        id: queryId([service.category, "social", phrase]),
-        query: `"${phrase}" (${SOCIAL_SITES.map((site) => `site:${site}`).join(" OR ")})`,
-        category: service.category,
-        intent: "market_signal",
-        priority: 82,
-        locale: "ru",
-        channel: "social",
-      });
-      queries.push({
-        id: queryId([service.category, "forum", phrase]),
-        query: `"${phrase}" (${FORUM_SITES.map((site) => `site:${site}`).join(" OR ")})`,
-        category: service.category,
-        intent: "problem",
-        priority: 76,
-        locale: "ru",
-        channel: "forum",
-      });
+      for (const site of diverseSearchSites()) {
+        queries.push({
+          id: queryId([service.category, site.domain, phrase]),
+          query: `"${phrase}" site:${site.domain}`,
+          category: service.category,
+          intent: site.group === "procurement" ? "tender" : "market_signal",
+          priority: site.group === "procurement" ? 94 : 82,
+          locale: "ru",
+          channel: site.group === "social" ? "social" : site.group === "forum" ? "forum" : "web",
+          site: site.domain,
+        });
+      }
     }
   }
   for (const [category, query, intent] of ENGLISH_QUERIES) {
@@ -112,22 +104,45 @@ function hash(value: string): number {
 }
 
 export function selectDailyDemandQueries(date: Date, budget: number): DemandQuery[] {
+  const limit = Math.max(0, Math.floor(budget));
+  if (!Number.isFinite(limit) || !limit) return [];
   const catalog = buildDemandQueryCatalog();
   const day = date.toISOString().slice(0, 10);
+  const dayNumber = utcDay(date);
+  const ranked = (items: DemandQuery[], salt: string) => items.sort((left, right) =>
+    hash(`${day}:${salt}:${left.id}`) - hash(`${day}:${salt}:${right.id}`));
+  const weights = [8, 18, 6, 4];
+  const quotas = weights.map((weight) => Math.floor(limit * weight / 36));
+  const remainders = weights.map((weight, index) => ({ index, remainder: limit * weight / 36 - quotas[index]! }))
+    .sort((left, right) => right.remainder - left.remainder);
+  for (let index = 0, remaining = limit - quotas.reduce((sum, quota) => sum + quota, 0); index < remaining; index += 1) {
+    quotas[remainders[index]!.index]! += 1;
+  }
+  // One query per site in each pass; rotating sites advances even with tiny budgets.
+  const sites = rotate(diverseSearchSites(), dayNumber * quotas[1]!);
+  const siteLanes = sites.map((site) => ranked(catalog.filter((item) => item.site === site.domain), site.domain));
+  const siteQueries: DemandQuery[] = [];
+  for (let index = 0; siteLanes.some((lane) => index < lane.length); index += 1) {
+    for (const lane of siteLanes) if (lane[index]) siteQueries.push(lane[index]!);
+  }
+  const lanes = [
+    ranked(catalog.filter((item) => !item.site && item.channel === "web" && item.priority >= 98), "core").slice(0, quotas[0]),
+    siteQueries.slice(0, quotas[1]),
+    ranked(catalog.filter((item) => item.channel === "news"), "news").slice(0, quotas[2]),
+    ranked(catalog.filter((item) => item.locale === "en"), "english").slice(0, quotas[3]),
+  ];
   const selected: DemandQuery[] = [];
   const selectedIds = new Set<string>();
-  const add = (items: DemandQuery[], limit: number, salt: string) => {
-    for (const item of items.sort((left, right) => hash(`${day}:${salt}:${left.id}`) - hash(`${day}:${salt}:${right.id}`)).slice(0, limit)) {
-      if (selected.length >= budget || selectedIds.has(item.id)) continue;
+  const add = (item: DemandQuery | undefined) => {
+    if (item && selected.length < limit && !selectedIds.has(item.id)) {
       selected.push(item);
       selectedIds.add(item.id);
     }
   };
-  add(catalog.filter((item) => item.priority >= 98 && item.channel === "web"), Math.min(8, budget), "core");
-  add(catalog.filter((item) => item.channel === "social"), Math.min(8, Math.max(0, budget - selected.length)), "social");
-  add(catalog.filter((item) => item.channel === "forum" && item.locale === "ru"), Math.min(6, Math.max(0, budget - selected.length)), "forum-ru");
-  add(catalog.filter((item) => item.channel === "news"), Math.min(6, Math.max(0, budget - selected.length)), "news-triggers");
-  add(catalog.filter((item) => item.locale === "en"), Math.min(4, Math.max(0, budget - selected.length)), "english");
-  add(catalog.filter((item) => !selectedIds.has(item.id)).sort((left, right) => right.priority - left.priority), budget - selected.length, "remaining");
+  // Interleave to give fallback providers a mix of general and site-specific queries.
+  while (lanes.some((lane) => lane.length) && selected.length < limit) {
+    for (const lane of [lanes[0]!, lanes[1]!, lanes[1]!, lanes[2]!, lanes[3]!]) add(lane.shift());
+  }
+  for (const item of ranked(catalog.filter((item) => !selectedIds.has(item.id)), "remaining")) add(item);
   return selected;
 }

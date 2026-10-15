@@ -108,6 +108,17 @@ export function renderDemandMarkdown(report: DemandMonitorReport): string {
     }),
     "",
   ];
+  if (report.coverage) {
+    const coverage = report.coverage;
+    lines.push("## Охват поиска", "",
+      `Площадок в плане: ${coverage.plannedSites.length} · с попыткой запроса: ${coverage.attemptedSites.length} · с корректным ответом поиска: ${coverage.successfulSites.length} · доменов в результатах: ${coverage.resultDomains.length}.`,
+      "Корректный ответ поиска не подтверждает чтение страницы или наличие заявки. Ноль результатов — тоже корректный ответ.", "",
+      `План: ${coverage.plannedSites.join(", ") || "—"}`,
+      `Попытки: ${coverage.attemptedSites.join(", ") || "—"}`,
+      `Домены результатов: ${coverage.resultDomains.join(", ") || "—"}`, "",
+      "| Провайдер | Попыток | Корректных ответов |", "|---|---:|---:|",
+      ...Object.entries(coverage.providers).map(([provider, stats]) => `| ${provider} | ${stats.attempted} | ${stats.successful ?? "не измеряется"} |`), "");
+  }
   if (report.failures.length > 0) lines.push("## Сбои", "", ...report.failures.map((failure) => `- ${failure.provider}: ${failure.message}`), "");
   return `${lines.join("\n")}\n`;
 }

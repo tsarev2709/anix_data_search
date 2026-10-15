@@ -36,7 +36,7 @@ export class SearxngProvider implements SearchProvider {
   private readonly instances: string[];
   private instancesDiscovered = false;
 
-  constructor(private readonly http: HttpOptions, instances = DEFAULT_INSTANCES) {
+  constructor(private readonly http: HttpOptions, instances = DEFAULT_INSTANCES, private readonly budgets = { company: 18, person: 12 }) {
     this.instances = [...instances];
   }
 
@@ -73,6 +73,7 @@ export class SearxngProvider implements SearchProvider {
         const response = await fetchWithRetry(url, { method: "GET", headers: { accept: "application/json" } }, requestOptions);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = JSON.parse(await response.text()) as SearxResponse;
+        if (!Array.isArray(payload.results)) throw new Error("invalid search response: results array missing");
         this.unhealthyUntil.delete(instance);
         return {
           succeeded: true,
@@ -97,30 +98,33 @@ export class SearxngProvider implements SearchProvider {
   }
 
   private async searchQueries(queries: string[], budget: number): Promise<ProviderSearchResult> {
+    if (!queries.length || budget <= 0) return { provider: this.name, source: this.source, status: "skipped", queries: [], successfulQueries: [], results: [], warnings: [] };
     await this.discoverInstances();
     const warnings: string[] = [];
     const results: SearchResult[] = [];
-    let successfulQueries = 0;
     const sent = queries.slice(0, budget);
+    const attempted: string[] = [];
+    const successfulQueries: string[] = [];
 
     // Small batches keep the run reasonably fast without flooding community instances.
     // If a full batch cannot reach any public instance, stop hammering the same
     // unavailable hosts and let the other demand providers finish the run.
     for (let index = 0; index < sent.length; index += 3) {
       const batchQueries = sent.slice(index, index + 3);
+      attempted.push(...batchQueries);
       const batch = await Promise.all(batchQueries.map((query) => this.searchOne(query)));
       let batchSuccesses = 0;
-      for (const outcome of batch) {
+      for (const [batchIndex, outcome] of batch.entries()) {
         results.push(...outcome.results);
         warnings.push(...outcome.warnings);
         if (outcome.succeeded) {
-          successfulQueries += 1;
+          successfulQueries.push(batchQueries[batchIndex]!);
           batchSuccesses += 1;
         }
       }
       if (batchSuccesses === 0) {
         const skipped = Math.max(0, sent.length - index - batchQueries.length);
-        warnings.push(`SearXNG: публичные инстансы недоступны; ${skipped} оставшихся запросов переданы другим провайдерам`);
+        warnings.push(`SearXNG: публичные инстансы недоступны; ${skipped} оставшихся запросов не выполнены`);
         break;
       }
     }
@@ -128,19 +132,20 @@ export class SearxngProvider implements SearchProvider {
     return {
       provider: this.name,
       source: this.source,
-      status: successfulQueries > 0 ? "used" : "failed",
-      queries: sent,
+      status: successfulQueries.length > 0 ? "used" : "failed",
+      queries: attempted,
+      successfulQueries,
       results: uniqueBy(results, (item) => item.url),
       warnings: uniqueBy(warnings, (item) => item),
     };
   }
 
   searchCompany(companyName: string, targetRoles: string[]) {
-    return this.searchQueries(companyQueryMatrix(companyName, targetRoles), 10);
+    return this.searchQueries(companyQueryMatrix(companyName, targetRoles), this.budgets.company);
   }
 
   searchPerson(personName: string, companyName: string) {
-    return this.searchQueries(personQueryMatrix(personName, companyName), 8);
+    return this.searchQueries(personQueryMatrix(personName, companyName), this.budgets.person);
   }
 
   searchDemand(queries: string[]) {

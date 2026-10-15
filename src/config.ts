@@ -51,6 +51,9 @@ const schema = z
     SEARXNG_INSTANCES: z.string().optional(),
     GITHUB_OSINT_TOKEN: z.string().optional(),
     YOUTUBE_API_KEY: z.string().optional(),
+    COMPANY_QUERY_BUDGET: z.coerce.number().int().min(5).max(60).default(18),
+    PERSON_QUERY_BUDGET: z.coerce.number().int().min(3).max(40).default(12),
+    DEMAND_TAVILY_QUERY_BUDGET: z.coerce.number().int().min(0).max(36).default(8),
     DEMAND_QUERY_BUDGET: z.coerce.number().int().min(5).max(120).default(36),
     DEMAND_MAX_SIGNALS: z.coerce.number().int().min(10).max(500).default(120),
     DEMAND_FEEDS: z.string().optional(),
@@ -148,12 +151,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       searxngInstances: nonEmpty(parsed.SEARXNG_INSTANCES)?.split(",").map((value) => value.trim()).filter(Boolean),
       githubToken: nonEmpty(parsed.GITHUB_OSINT_TOKEN),
       youtubeApiKey: parsed.YOUTUBE_API_KEY,
+      companyQueryBudget: parsed.COMPANY_QUERY_BUDGET,
+      personQueryBudget: parsed.PERSON_QUERY_BUDGET,
     },
     demand: {
       queryBudget: parsed.DEMAND_QUERY_BUDGET,
       maxSignals: parsed.DEMAND_MAX_SIGNALS,
       feeds: parsed.DEMAND_FEEDS?.split(",").map((value) => value.trim()).filter(Boolean) ?? [],
       discussionPages: parsed.DEMAND_DISCUSSION_PAGES,
+      tavilyQueryBudget: parsed.DEMAND_TAVILY_QUERY_BUDGET,
     },
     storage:
       parsed.SUPABASE_URL && parsed.SUPABASE_SERVICE_ROLE_KEY

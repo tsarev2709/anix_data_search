@@ -1,14 +1,16 @@
 import type { HttpOptions } from "../http.js";
-import { requestJson } from "../http.js";
+import { HttpError, requestJson } from "../http.js";
 import type { Evidence, SearchResult } from "../types.js";
 import { normalizeUrl, truncate, uniqueBy } from "../utils.js";
 import type { ProviderSearchResult, SearchProvider } from "./search-provider.js";
+import { SEARCH_SITES } from "./source-catalog.js";
 
 interface TavilyResponse {
-  results?: Array<{ title?: string; url?: string; content?: string; score?: number }>;
+  results?: Array<{ title?: string; url?: string; content?: string; score?: number; published_date?: string }>;
 }
 
 const NON_OFFICIAL_HOSTS = [
+  ...SEARCH_SITES.map((site) => site.domain),
   "2gis.ru",
   "avito.ru",
   "facebook.com",
@@ -34,27 +36,55 @@ export class TavilySearch implements SearchProvider {
   ) {}
 
   async searchCompany(companyName: string, targetRoles: string[]): Promise<ProviderSearchResult> {
-    const queries = companySearchQueries(companyName, targetRoles);
-    const batches = await Promise.all(queries.map((query) => this.search(query)));
-    return { provider: this.name, source: this.source, status: "used", queries, results: uniqueBy(batches.flat(), (result) => result.url), warnings: [] };
+    return this.searchQueries(companySearchQueries(companyName, targetRoles));
   }
 
-  private async search(query: string): Promise<SearchResult[]> {
+  searchPerson(personName: string, companyName: string): Promise<ProviderSearchResult> {
+    return this.searchQueries([`"${personName}" "${companyName}" контакты`, `"${personName}" "${companyName}" Telegram OR TenChat OR LinkedIn`]);
+  }
+
+  searchDemand(queries: string[], budget: number): Promise<ProviderSearchResult> {
+    return this.searchQueries([...new Set(queries)].slice(0, budget), true);
+  }
+
+  private async searchQueries(planned: string[], fresh = false): Promise<ProviderSearchResult> {
+    const results: SearchResult[] = [];
+    const warnings: string[] = [];
+    const queries: string[] = [];
+    const successfulQueries: string[] = [];
+    // Sequential calls stop immediately on exhausted credits or invalid credentials.
+    for (const query of planned) {
+      queries.push(query);
+      try {
+        results.push(...await this.search(query, fresh));
+        successfulQueries.push(query);
+      } catch (error) {
+        warnings.push(`Tavily: ${error instanceof Error ? error.message : String(error)}`);
+        if (error instanceof HttpError && [401, 403, 429, 432, 433].includes(error.status)) break;
+      }
+    }
+    return { provider: this.name, source: this.source, status: successfulQueries.length ? "used" : queries.length ? "failed" : "skipped", queries, successfulQueries, results: uniqueBy(results, (result) => result.url), warnings };
+  }
+
+  private async search(query: string, fresh = false): Promise<SearchResult[]> {
     const response = await requestJson<TavilyResponse>(
       "https://api.tavily.com/search",
       {
         method: "POST",
         headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify({ query, topic: "general", search_depth: "basic", max_results: 6, include_answer: false, include_raw_content: false }),
+        body: JSON.stringify({ query, topic: "general", search_depth: "basic", max_results: 6, include_answer: false, include_raw_content: false, ...(fresh ? { time_range: "month", include_published_date: true } : {}) }),
       },
-      this.http,
+      { ...this.http, retries: 0 },
     );
+    if (!Array.isArray(response.results)) throw new Error("invalid Tavily response: results array missing");
     return (response.results ?? [])
       .map((result) => ({
         title: result.title?.trim() || result.url || "Результат поиска",
         url: normalizeUrl(result.url ?? "") ?? "",
         content: truncate(result.content ?? "", 3_000),
         ...(typeof result.score === "number" ? { score: result.score } : {}), provider: this.source,
+        query,
+        publishedAt: result.published_date ?? null,
       }))
       .filter((result) => Boolean(result.url));
   }

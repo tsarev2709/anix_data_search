@@ -5,6 +5,8 @@ export interface ProviderSearchResult {
   source: EvidenceSource;
   status: "used" | "skipped" | "failed";
   queries: string[];
+  /** Queries with a valid response, including zero-result responses. */
+  successfulQueries?: string[];
   results: SearchResult[];
   warnings: string[];
 }

@@ -221,6 +221,7 @@ export interface DemandQuery {
   priority: number;
   locale: "ru" | "en";
   channel: "web" | "social" | "forum" | "news";
+  site?: string;
 }
 
 export interface DemandSignal {
@@ -258,4 +259,11 @@ export interface DemandMonitorReport {
   failures: Array<{ provider: string; message: string }>;
   resultsCount: number;
   discardedCount: number;
+  coverage?: {
+    plannedSites: string[];
+    attemptedSites: string[];
+    successfulSites: string[];
+    resultDomains: string[];
+    providers: Record<string, { attempted: number; successful: number | null }>;
+  };
 }
