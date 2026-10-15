@@ -16,6 +16,7 @@ export interface SearchProvider {
   readonly source: EvidenceSource;
   searchCompany(companyName: string, targetRoles: string[]): Promise<ProviderSearchResult>;
   searchPerson?(personName: string, companyName: string): Promise<ProviderSearchResult>;
+  searchPublicQueries?(queries: string[], budget: number): Promise<ProviderSearchResult>;
 }
 
 export function providerFailure(provider: SearchProvider, error: unknown, queries: string[] = []): ProviderSearchResult {

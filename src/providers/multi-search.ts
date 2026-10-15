@@ -4,6 +4,7 @@ import type { ProviderSearchResult, SearchProvider } from "./search-provider.js"
 import { providerFailure } from "./search-provider.js";
 
 export interface MultiSearchOutcome {
+  queryCounts?: Record<string, number>;
   results: SearchResult[];
   queries: string[];
   providers: Record<string, ProviderRunStatus>;
@@ -15,6 +16,7 @@ function combine(outcomes: ProviderSearchResult[]): MultiSearchOutcome {
   const providers: Record<string, ProviderRunStatus> = {};
   for (const outcome of outcomes) providers[outcome.provider] = outcome.status;
   return {
+    queryCounts: Object.fromEntries(outcomes.map((outcome) => [outcome.provider, outcome.queries.length])),
     results: uniqueBy(outcomes.flatMap((outcome) => outcome.results), (result) => result.url),
     queries: [...new Set(outcomes.flatMap((outcome) => outcome.queries))],
     providers,
@@ -27,6 +29,18 @@ function combine(outcomes: ProviderSearchResult[]): MultiSearchOutcome {
 
 export class MultiSearchProvider {
   constructor(private readonly providers: SearchProvider[]) {}
+
+  async searchPublicQueries(queries: string[], paidBudget: number): Promise<MultiSearchOutcome> {
+    const capable = this.providers.filter((provider) => provider.searchPublicQueries && (provider.name !== "tavily" || paidBudget > 0));
+    const outcomes = await Promise.all(capable.map(async (provider) => {
+      try {
+        return await provider.searchPublicQueries!(queries, provider.name === "tavily" ? paidBudget : queries.length);
+      } catch (error) {
+        return providerFailure(provider, error);
+      }
+    }));
+    return combine(outcomes);
+  }
 
   async searchCompany(companyName: string, targetRoles: string[]): Promise<MultiSearchOutcome> {
     const outcomes = await Promise.all(

@@ -2,6 +2,8 @@
 
 import { createClient, type Session } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ProcurementAudit } from "./procurement-audit";
+import type { ProcurementResearch } from "../../src/procurement/types";
 
 type View = "overview" | "demand" | "contacts" | "runs" | "settings";
 type Decision = "pending" | "approved" | "rejected";
@@ -55,6 +57,7 @@ type CompanyRun = {
   company_context?: { source?: "amo" | "manual" };
   actions: Array<{ type: string; status: string; detail: string }>;
   research_trace: {
+    procurement?: ProcurementResearch;
     searchQueries?: string[];
     searchResults?: Array<{ title: string; url: string; content?: string; provider?: string; query?: string; publishedAt?: string | null }>;
     crawledPages?: Array<{ title: string; url: string; emails: string[]; phones: string[]; socialUrls: string[] }>;
@@ -283,6 +286,7 @@ function CompanyAudit({ company, index }: { company: CompanyRun; index: number }
   return <details className="company-audit" open={index === 0}><summary><span className="company-number">{index + 1}</span><span><strong>{company.company_name}</strong><small>Сделка #{company.source_lead_id} · {company.source_lead_name || "без названия"}</small></span><span className="company-audit-counts"><b>{selected.length}</b> отобрано<small>{Math.round(company.duration_ms / 100) / 10} сек.</small></span></summary><div className="company-audit-body">
     <div className="audit-links">{amoLeadUrl && <a href={amoLeadUrl} target="_blank" rel="noreferrer">Открыть сделку AmoCRM ↗</a>}{amoCompanyUrl && <a href={amoCompanyUrl} target="_blank" rel="noreferrer">Открыть компанию ↗</a>}{company.website && <a href={company.website} target="_blank" rel="noreferrer">Официальный сайт ↗</a>}</div>
     <div className="provider-strip">{Object.entries(trace.providers ?? {}).map(([name, status]) => <span className={`provider ${status}`} key={name}><b>{name}</b>{status === "used" ? "отработал" : status === "disabled" ? "не подключён" : status === "failed" ? "ошибка" : "пропущен"}</span>)}</div>
+    {trace.procurement && <ProcurementAudit research={trace.procurement} />}
     {(crawl || socialEnrichment) && <div className="crawl-stats">{crawl && <><span>Sitemap: <b>{crawl.sitemapEntries}</b> URL</span><span>RSS: <b>{crawl.feedUrls.length}</b></span><span>PDF: <b>{crawl.pdfUrls.length}</b></span><span>JS fallback: <b>{crawl.jsFallbacks}</b></span><span>WordPress: <b>{crawl.wordpress ? "да" : "нет"}</b></span></>}{socialEnrichment && <><span>Соцпрофилей проверено: <b>{socialEnrichment.attempted}</b></span><span>Прочитано: <b>{socialEnrichment.succeeded}</b></span><span>Недоступно: <b>{socialEnrichment.failed}</b></span></>}</div>}
     <div className="audit-columns"><section><p className="audit-title">Поисковые запросы · {queries.length}</p>{queries.length > 0 ? <ol className="query-list">{queries.map((query) => <li key={query}>{query}</li>)}</ol> : <p className="audit-muted">Внешний поиск не выполнялся.</p>}</section><section><p className="audit-title">Обход сайта · {pages.length} страниц</p>{pages.length > 0 ? <div className="source-list">{pages.map((page) => <a href={page.url} target="_blank" rel="noreferrer" key={page.url}><strong>{page.title}</strong><small>{page.emails.length} email · {page.phones.length} телефонов · {page.socialUrls.length} соцсетей</small></a>)}</div> : <p className="audit-muted">Страницы не обойдены: в CRM нет сайта или он недоступен.</p>}</section></div>
     {results.length > 0 && <section className="audit-section"><p className="audit-title">Результаты веб-поиска · {results.length}</p><div className="search-result-grid">{results.map((result) => <a href={result.url} target="_blank" rel="noreferrer" key={result.url}><b>{result.provider || "web"}{result.publishedAt ? ` · ${formatDate(result.publishedAt)}` : ""}</b><strong>{result.title}</strong><span>{result.content || result.url}</span></a>)}</div></section>}

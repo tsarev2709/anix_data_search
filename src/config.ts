@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validInn } from "./procurement/identity.js";
 
 const booleanString = z
   .enum(["true", "false"])
@@ -22,10 +23,12 @@ const schema = z
     AMO_OUTPUT_STATUS_ID: optionalInteger,
     AMO_COMPANY_WEBSITE_FIELD_ID: optionalInteger,
     AMO_COMPANY_NAME_FIELD_ID: optionalInteger,
+    AMO_COMPANY_INN_FIELD_ID: optionalInteger,
     AMO_CONTACT_POSITION_FIELD_ID: optionalInteger,
     CONTACT_SEARCH_OPERATION: z.enum(["research", "research-company", "monitor-demand", "daily", "sync-approved"]).default("research"),
     CONTACT_SEARCH_MODE: z.enum(["dry-run", "apply"]).default("dry-run"),
     MANUAL_COMPANY_NAME: z.string().optional(),
+    MANUAL_COMPANY_INN: z.string().refine((value) => validInn(value) !== null, "invalid INN checksum").optional(),
     MANUAL_COMPANY_WEBSITE: z.string().url().optional(),
     MAX_COMPANIES: z.coerce.number().int().min(1).max(250).default(10),
     RESEARCH_POOL_SIZE: z.coerce.number().int().min(10).max(5000).default(250),
@@ -53,6 +56,10 @@ const schema = z
     YOUTUBE_API_KEY: z.string().optional(),
     COMPANY_QUERY_BUDGET: z.coerce.number().int().min(5).max(60).default(18),
     PERSON_QUERY_BUDGET: z.coerce.number().int().min(3).max(40).default(12),
+    PROCUREMENT_ENABLED: booleanString.default("true"),
+    PROCUREMENT_QUERY_BUDGET: z.coerce.number().int().min(5).max(40).default(16),
+    PROCUREMENT_TAVILY_QUERY_BUDGET: z.coerce.number().int().min(0).max(12).default(4),
+    PROCUREMENT_MAX_PAGES: z.coerce.number().int().min(0).max(20).default(8),
     DEMAND_TAVILY_QUERY_BUDGET: z.coerce.number().int().min(0).max(36).default(8),
     DEMAND_QUERY_BUDGET: z.coerce.number().int().min(5).max(120).default(36),
     DEMAND_MAX_SIGNALS: z.coerce.number().int().min(10).max(500).default(120),
@@ -103,6 +110,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     HUNTER_API_KEY: nonEmpty(env.HUNTER_API_KEY),
     OPENAI_API_KEY: nonEmpty(env.OPENAI_API_KEY),
     MANUAL_COMPANY_NAME: nonEmpty(env.MANUAL_COMPANY_NAME),
+    MANUAL_COMPANY_INN: nonEmpty(env.MANUAL_COMPANY_INN),
     MANUAL_COMPANY_WEBSITE: nonEmpty(env.MANUAL_COMPANY_WEBSITE),
     YOUTUBE_API_KEY: nonEmpty(env.YOUTUBE_API_KEY),
     DEMAND_FEEDS: nonEmpty(env.DEMAND_FEEDS),
@@ -122,6 +130,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       outputStatusId: parsed.AMO_OUTPUT_STATUS_ID,
       companyWebsiteFieldId: parsed.AMO_COMPANY_WEBSITE_FIELD_ID,
       companyNameFieldId: parsed.AMO_COMPANY_NAME_FIELD_ID,
+      companyInnFieldId: parsed.AMO_COMPANY_INN_FIELD_ID,
       contactPositionFieldId: parsed.AMO_CONTACT_POSITION_FIELD_ID,
     },
     run: {
@@ -138,6 +147,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       followUpDays: parsed.FOLLOW_UP_DAYS,
       targetRoles: parsed.TARGET_ROLES.split("|").map((role) => role.trim()).filter(Boolean),
       manualCompanyName: parsed.MANUAL_COMPANY_NAME,
+      manualCompanyInn: parsed.MANUAL_COMPANY_INN,
       manualCompanyWebsite: parsed.MANUAL_COMPANY_WEBSITE,
     },
     providers: {
@@ -153,6 +163,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
       youtubeApiKey: parsed.YOUTUBE_API_KEY,
       companyQueryBudget: parsed.COMPANY_QUERY_BUDGET,
       personQueryBudget: parsed.PERSON_QUERY_BUDGET,
+    },
+    procurement: {
+      enabled: parsed.PROCUREMENT_ENABLED,
+      queryBudget: parsed.PROCUREMENT_QUERY_BUDGET,
+      tavilyQueryBudget: parsed.PROCUREMENT_TAVILY_QUERY_BUDGET,
+      maxPages: parsed.PROCUREMENT_MAX_PAGES,
     },
     demand: {
       queryBudget: parsed.DEMAND_QUERY_BUDGET,

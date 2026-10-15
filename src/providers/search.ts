@@ -47,6 +47,11 @@ export class TavilySearch implements SearchProvider {
     return this.searchQueries([...new Set(queries)].slice(0, budget), true);
   }
 
+  searchPublicQueries(queries: string[], budget: number): Promise<ProviderSearchResult> {
+    // Company procurement history must not be restricted to the last month.
+    return this.searchQueries([...new Set(queries)].slice(0, budget));
+  }
+
   private async searchQueries(planned: string[], fresh = false): Promise<ProviderSearchResult> {
     const results: SearchResult[] = [];
     const warnings: string[] = [];

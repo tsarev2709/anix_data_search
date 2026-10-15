@@ -151,4 +151,8 @@ export class SearxngProvider implements SearchProvider {
   searchDemand(queries: string[]) {
     return this.searchQueries(queries, queries.length);
   }
+
+  searchPublicQueries(queries: string[], budget: number) {
+    return this.searchQueries(queries, budget);
+  }
 }
