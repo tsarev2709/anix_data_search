@@ -98,3 +98,9 @@ npm start
 - [Выбор парсеров и работа с обсуждениями](docs/parsing-sources.md)
 
 Использованные API: [AmoCRM сделки](https://www.amocrm.ru/developers/content/crm_platform/leads-api), [контакты](https://www.amocrm.ru/developers/content/crm_platform/contacts-api), [связи](https://www.amocrm.ru/developers/content/crm_platform/entity-links-api), [Hunter API v2](https://hunter.io/api-documentation/v2), [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search), [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
+
+## Охват сайтов и диагностика
+
+Поиск контактов и радар используют общий каталог 36 площадок с ротацией: соцсети, форумы, закупки и отраслевые издания. Это поиск по индексируемым страницам; прямые парсеры сайтов добавляются отдельно. При стандартном бюджете радар распределяет 18 адресных запросов в день и включает все 36 площадок в план за два дня.
+
+Резерв Tavily для невыполненных SearXNG-запросов ограничен `DEMAND_TAVILY_QUERY_BUDGET` (8 по умолчанию, 0 отключает) и работает только с настроенным ключом. В отчёте различаются план, реальные попытки, корректные ответы и домены находок. Подробности, ограничения и исходные показатели: [docs/parsing-sources.md](docs/parsing-sources.md).

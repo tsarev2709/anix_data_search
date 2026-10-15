@@ -1,4 +1,6 @@
-export function companyQueryMatrix(companyName: string, targetRoles: string[]): string[] {
+import { diverseSearchSites, rotate, utcDay } from "./source-catalog.js";
+
+export function companyQueryMatrix(companyName: string, targetRoles: string[], date = new Date()): string[] {
   const company = `"${companyName}"`;
   const roles = targetRoles.slice(0, 8).map((role) => `"${role}"`).join(" OR ");
   return [
@@ -7,25 +9,22 @@ export function companyQueryMatrix(companyName: string, targetRoles: string[]): 
     `${company} email телефон`,
     `${company} интервью вебинар конференция`,
     `${company} назначен назначена руководитель`,
-    `${company} site:t.me OR site:vk.com`,
     `${company} site:youtube.com OR site:rutube.ru`,
-    `${company} site:threads.net OR site:instagram.com`,
-    `${company} site:tenchat.ru OR site:linkedin.com`,
-    `${company} Telegram OR ВКонтакте OR TenChat`,
+    `${company} filetype:pdf контакты OR спикер OR директор`,
+    ...rotate(diverseSearchSites(), utcDay(date)).map((site) => `${company} site:${site.domain}`),
   ];
 }
 
-export function personQueryMatrix(personName: string, companyName: string): string[] {
+export function personQueryMatrix(personName: string, companyName: string, date = new Date()): string[] {
   const person = `"${personName}"`;
   const company = `"${companyName}"`;
   return [
     `${person} ${company}`,
     `${person} ${company} email`,
     `${person} ${company} Telegram`,
-    `${person} ${company} site:t.me OR site:vk.com`,
-    `${person} ${company} site:tenchat.ru OR site:linkedin.com`,
-    `${person} ${company} site:threads.net OR site:instagram.com`,
     `${person} ${company} интервью OR конференция OR вебинар`,
     `${person} ${company} site:youtube.com`,
+    ...rotate(diverseSearchSites().filter((site) => site.group !== "procurement"), utcDay(date))
+      .map((site) => `${person} ${company} site:${site.domain}`),
   ];
 }
